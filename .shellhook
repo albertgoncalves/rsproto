@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+export WD=$PWD
+
+for x in bin out; do
+    if [ ! -d "$WD/$x" ]; then
+        mkdir "$WD/$x"
+    fi
+done
+
+export FLAGS=(
+    -W absolute-paths-not-starting-with-crate
+    -W anonymous-parameters
+    -W box-pointers
+    -W deprecated-in-future
+    -W elided-lifetimes-in-paths
+    -W explicit-outlives-requirements
+    -W indirect-structural-match
+    -W keyword-idents
+    -W macro-use-extern-crate
+    -W meta-variable-misuse
+    -W missing-copy-implementations
+    -W missing-debug-implementations
+    -W non-ascii-idents
+    -W single-use-lifetimes
+    -W trivial-casts
+    -W trivial-numeric-casts
+    -W unreachable-pub
+    -W unused-extern-crates
+    -W unused-import-braces
+    -W unused-lifetimes
+    -W unused-qualifications
+    -W unused-results
+    -W variant-size-differences
+)
+
+runr () {
+    handle=$(echo "$1" | sed 's/^[a-z\/]*\/\(.*\)\.[a-z]*$/\1/')
+    rustfmt "$1" || return
+    rustc \
+        -o "$WD/bin/${handle}" \
+        "${FLAGS[@]}" \
+        "$1" \
+        || return
+    if [ -z "$2" ]; then
+        "$WD/bin/${handle}"
+    else
+        "$WD/bin/${handle}" "$2"
+    fi
+}
+
+export -f runr
