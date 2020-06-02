@@ -6,3 +6,5 @@
 !src/
 !*.toml
 !*.rs
+!data/
+!*.txt
