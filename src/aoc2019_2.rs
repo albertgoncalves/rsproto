@@ -2,8 +2,8 @@ use std::ops;
 
 /* NOTE: See `https://adventofcode.com/2019/day/2`. */
 
-fn tokenize(string: &str) -> Vec<u32> {
-    string.split(",").map(|x| x.parse().unwrap()).collect()
+fn tokenize(source: &str) -> Vec<u32> {
+    source.split(",").map(|x| x.parse().unwrap()).collect()
 }
 
 enum OpCode {
@@ -87,10 +87,10 @@ mod tests {
     use super::{eval, tokenize};
 
     macro_rules! test {
-        ($test:ident, $string:expr, $result:expr $(,)?) => {
+        ($test:ident, $source:expr, $result:expr $(,)?) => {
             #[test]
             fn $test() {
-                let mut program: Vec<u32> = tokenize($string);
+                let mut program: Vec<u32> = tokenize($source);
                 eval(&mut program);
                 assert_eq!(program[0], $result);
             }
