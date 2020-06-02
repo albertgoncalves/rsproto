@@ -8,10 +8,9 @@ for x in bin out; do
     fi
 done
 
-export FLAGS=(
+export SHARED_FLAGS=(
     -C "opt-level=0"
     -C "overflow-checks=yes"
-    -C "panic=abort"
     -W "absolute-paths-not-starting-with-crate"
     -W "anonymous-parameters"
     -W "box-pointers"
@@ -36,14 +35,14 @@ export FLAGS=(
     -W "unused-results"
     -W "variant-size-differences"
 )
+export MAIN_FLAGS=(
+    -C "panic=abort"
+)
 
 runr () {
     handle=$(echo "$1" | sed 's/^[a-z\/]*\/\(.*\)\.[a-z]*$/\1/')
     rustfmt "$1" || return
-    rustc \
-        -o "$WD/bin/${handle}" \
-        "${FLAGS[@]}" \
-        "$1" \
+    rustc -o "$WD/bin/${handle}" "${SHARED_FLAGS[@]}" "${MAIN_FLAGS[@]}" "$1" \
         || return
     if [ -z "$2" ]; then
         "$WD/bin/${handle}"
@@ -52,4 +51,13 @@ runr () {
     fi
 }
 
+testr () {
+    handle=$(echo "$1" | sed 's/^[a-z\/]*\/\(.*\)\.[a-z]*$/\1/')
+    rustfmt "$1" || return
+    rustc -o "$WD/bin/${handle}_test" "${SHARED_FLAGS[@]}" --test "$1" \
+        || return
+    "$WD/bin/${handle}_test"
+}
+
 export -f runr
+export -f testr
