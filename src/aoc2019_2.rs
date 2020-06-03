@@ -27,7 +27,7 @@ impl From<u32> for OpCode {
     }
 }
 
-macro_rules! pop_4 {
+macro_rules! bin_op {
     ($i:expr, $program:expr, $fn:expr $(,)?) => {{
         let a: u32 = $program[$program[$i + 1] as usize];
         let b: u32 = $program[$program[$i + 2] as usize];
@@ -41,8 +41,8 @@ fn eval(program: &mut [u32]) {
     let mut i: usize = 0;
     while i < n {
         match program[i].into() {
-            OpCode::Add => pop_4!(i, program, Add::add),
-            OpCode::Mul => pop_4!(i, program, Mul::mul),
+            OpCode::Add => bin_op!(i, program, Add::add),
+            OpCode::Mul => bin_op!(i, program, Mul::mul),
             OpCode::Halt => return,
             OpCode::Unknown => panic!(),
         }
