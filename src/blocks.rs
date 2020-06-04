@@ -1,4 +1,8 @@
+use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 const BUFFER_WIDTH: usize = 20;
 const BUFFER_HEIGHT: usize = 20;
@@ -10,6 +14,8 @@ const BLOCK_HEIGHT: usize = BUFFER_HEIGHT / N;
 const X_BLOCKS: usize = (BUFFER_WIDTH + BLOCK_WIDTH - 1) / BLOCK_WIDTH;
 const Y_BLOCKS: usize = (BUFFER_HEIGHT + BLOCK_HEIGHT - 1) / BLOCK_HEIGHT;
 const BLOCKS_CAP: usize = X_BLOCKS * Y_BLOCKS;
+
+const N_THREADS: usize = 3;
 
 #[derive(Clone, Copy, Debug)]
 struct XY {
@@ -31,13 +37,14 @@ fn set_buffer(buffer: &mut [u8], works: &[Work]) {
         if BLOCKS_CAP <= index {
             return;
         }
-        let work: Work = (*works)[index];
+        let work: Work = works[index];
         for y in work.start.y..work.end.y {
             let offset: usize = y * BUFFER_WIDTH;
             for x in work.start.x..work.end.x {
-                (*buffer)[x + offset] = index as u8;
+                buffer[x + offset] = index as u8;
             }
         }
+        thread::sleep(Duration::from_millis(100))
     }
 }
 
@@ -59,11 +66,25 @@ fn main() {
             });
         }
     }
-    /* NOTE: If `Rust` wasn't `Rust`, this is where we'd call a few threads and
-     * let them crunch on this function. The `AtomicUsize` will keep them from
-     * stepping on each other's toes.
-     */
-    set_buffer(&mut buffer, &works);
+    let mut handles: Vec<JoinHandle<()>> = Vec::with_capacity(N_THREADS);
+    for _ in 0..N_THREADS {
+        /* NOTE: This is a hack merely to get around the restrictions of
+         * `*mut` and `*const`. Neither implements `Sync` or `Send`, so the
+         * compiler will complain when we try and toss them into
+         * `thread::spawn`. Whatever, man.
+         */
+        let mut buffer: AtomicPtr<[u8; BUFFER_CAP]> =
+            AtomicPtr::new(&mut buffer);
+        let mut works: AtomicPtr<Vec<Work>> = AtomicPtr::new(&mut works);
+        unsafe {
+            handles.push(thread::spawn(move || {
+                set_buffer(&mut **buffer.get_mut(), &**works.get_mut());
+            }));
+        }
+    }
+    for handle in handles {
+        handle.join().unwrap();
+    }
     for y in 0..BUFFER_HEIGHT {
         let offset: usize = y * BUFFER_WIDTH;
         for x in 0..BUFFER_WIDTH {
