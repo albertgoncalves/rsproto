@@ -13,7 +13,6 @@ export SHARED_FLAGS=(
     -C "overflow-checks=yes"
     -W "absolute-paths-not-starting-with-crate"
     -W "anonymous-parameters"
-    -W "box-pointers"
     -W "deprecated-in-future"
     -W "elided-lifetimes-in-paths"
     -W "explicit-outlives-requirements"
