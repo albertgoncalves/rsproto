@@ -1,5 +1,4 @@
-use std::sync::atomic::AtomicPtr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -15,7 +14,7 @@ const X_BLOCKS: usize = (BUFFER_WIDTH + BLOCK_WIDTH - 1) / BLOCK_WIDTH;
 const Y_BLOCKS: usize = (BUFFER_HEIGHT + BLOCK_HEIGHT - 1) / BLOCK_HEIGHT;
 const BLOCKS_CAP: usize = X_BLOCKS * Y_BLOCKS;
 
-const N_THREADS: usize = 3;
+const THREAD_CAP: usize = 3;
 
 #[derive(Clone, Copy, Debug)]
 struct XY {
@@ -66,8 +65,8 @@ fn main() {
             });
         }
     }
-    let mut handles: Vec<JoinHandle<()>> = Vec::with_capacity(N_THREADS);
-    for _ in 0..N_THREADS {
+    let mut handles: Vec<JoinHandle<()>> = Vec::with_capacity(THREAD_CAP);
+    for _ in 0..THREAD_CAP {
         /* NOTE: This is a hack merely to get around the restrictions of
          * `*mut` and `*const`. Neither implements `Sync` or `Send`, so the
          * compiler will complain when we try and toss them into
