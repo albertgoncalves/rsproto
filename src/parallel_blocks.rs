@@ -81,7 +81,7 @@ fn main() {
         let works: ThreadPtr<Vec<Work>> = ThreadPtr(&works);
         unsafe {
             handles.push(thread::spawn(move || {
-                set_buffer(&mut *buffer.0, &*works.0);
+                set_buffer(&mut (*buffer.0), &(*works.0));
             }));
         }
     }
