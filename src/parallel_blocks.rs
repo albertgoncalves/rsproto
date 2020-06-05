@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -27,6 +27,16 @@ struct Work {
     start: XY,
     end: XY,
 }
+
+struct ThreadPtr<T>(*const T);
+
+unsafe impl<T> Send for ThreadPtr<T> {}
+unsafe impl<T> Sync for ThreadPtr<T> {}
+
+struct ThreadMutPtr<T>(*mut T);
+
+unsafe impl<T> Send for ThreadMutPtr<T> {}
+unsafe impl<T> Sync for ThreadMutPtr<T> {}
 
 static INDEX: AtomicUsize = AtomicUsize::new(0);
 
@@ -67,17 +77,11 @@ fn main() {
     }
     let mut handles: Vec<JoinHandle<()>> = Vec::with_capacity(THREAD_CAP);
     for _ in 0..THREAD_CAP {
-        /* NOTE: This is a hack merely to get around the restrictions of
-         * `*mut` and `*const`. Neither implements `Sync` or `Send`, so the
-         * compiler will complain when we try and toss them into
-         * `thread::spawn`. Whatever, man.
-         */
-        let mut buffer: AtomicPtr<[u8; BUFFER_CAP]> =
-            AtomicPtr::new(&mut buffer);
-        let mut works: AtomicPtr<Vec<Work>> = AtomicPtr::new(&mut works);
+        let buffer: ThreadMutPtr<[u8; BUFFER_CAP]> = ThreadMutPtr(&mut buffer);
+        let works: ThreadPtr<Vec<Work>> = ThreadPtr(&works);
         unsafe {
             handles.push(thread::spawn(move || {
-                set_buffer(&mut **buffer.get_mut(), &**works.get_mut());
+                set_buffer(&mut *buffer.0, &*works.0);
             }));
         }
     }
