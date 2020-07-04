@@ -64,7 +64,7 @@ fn set_row(
                 functor,
                 type_: *t,
                 arity: 0,
-                components: vec![],
+                components: Vec::new(),
             });
         }
         Expr::Func(f, exprs) => {
@@ -96,14 +96,43 @@ fn deref(
     index
 }
 
+fn get_term(
+    rows: &[Row],
+    bindings: &HashMap<RowIndex, RowIndex>,
+    index: RowIndex,
+) -> String {
+    let row: &Row = &rows[index];
+    if row.arity == 0 {
+        return row.functor.to_string();
+    }
+    let mut components: Vec<String> = Vec::new();
+    for i in &row.components {
+        let deref_i: RowIndex = deref(bindings, *i);
+        if index != deref_i {
+            let bound_row: &Row = &rows[deref_i];
+            if bound_row.arity == 0 {
+                components.push(bound_row.functor.to_string());
+            } else {
+                components.push(get_term(rows, bindings, deref_i));
+            }
+        }
+    }
+    let components: String = components.join(", ");
+    let mut s: String = String::with_capacity(components.len() + 3);
+    s.push(row.functor);
+    s.push('(');
+    s.push_str(&components);
+    s.push(')');
+    s
+}
+
 fn unify(
     rows: &[Row],
     bindings: &mut HashMap<RowIndex, RowIndex>,
     i_x: RowIndex,
     i_y: RowIndex,
-) -> Option<Vec<bool>> {
+) -> bool {
     let n: usize = rows.len();
-    let mut mgu: Vec<bool> = vec![false; n];
     let mut stack_x: Vec<RowIndex> = Vec::with_capacity(n);
     let mut stack_y: Vec<RowIndex> = Vec::with_capacity(n);
     stack_x.push(i_x);
@@ -121,68 +150,65 @@ fn unify(
                         stack_y.push(*c);
                     }
                 } else {
-                    return None;
-                }
-            }
-            (Type::Var(_), Type::Const(_)) => {
-                let mut insert: Option<(RowIndex, RowIndex)> = None;
-                if let Some(bound_index) = bindings.get(&row_i.index) {
-                    match rows[deref(bindings, *bound_index)].type_ {
-                        Type::Const(_) => {
-                            stack_x.push(i);
-                            stack_y.push(*bound_index);
-                        }
-                        Type::Var(_) => insert = Some((i, *bound_index)),
-                    }
-                } else {
-                    insert = Some((row_i.index, row_j.index));
-                    mgu[j] = true;
-                }
-                if let Some((k, v)) = insert {
-                    let _: Option<RowIndex> = bindings.insert(k, v);
+                    return false;
                 }
             }
             (Type::Const(_), Type::Var(_)) => {
-                let mut insert: Option<(RowIndex, RowIndex)> = None;
-                if let Some(bound_index) = bindings.get(&row_j.index) {
-                    match rows[deref(bindings, *bound_index)].type_ {
+                if let Some(bound_j) = bindings.get(&row_j.index).map(|x| *x) {
+                    let deref_j: RowIndex = deref(bindings, bound_j);
+                    match rows[deref_j].type_ {
                         Type::Const(_) => {
-                            stack_x.push(*bound_index);
-                            stack_y.push(j);
+                            stack_x.push(i);
+                            stack_y.push(deref_j);
                         }
-                        Type::Var(_) => insert = Some((j, *bound_index)),
+                        Type::Var(_) => {
+                            let _: Option<RowIndex> =
+                                bindings.insert(i, deref_j);
+                        }
                     }
                 } else {
-                    insert = Some((row_j.index, row_i.index));
-                    mgu[i] = true;
+                    let _: Option<RowIndex> =
+                        bindings.insert(row_i.index, row_j.index);
                 }
-                if let Some((k, v)) = insert {
-                    let _: Option<RowIndex> = bindings.insert(k, v);
+            }
+            (Type::Var(_), Type::Const(_)) => {
+                if let Some(bound_i) = bindings.get(&row_i.index).map(|x| *x) {
+                    let deref_i: RowIndex = deref(bindings, bound_i);
+                    match rows[deref_i].type_ {
+                        Type::Const(_) => {
+                            stack_x.push(deref_i);
+                            stack_y.push(j);
+                        }
+                        Type::Var(_) => {
+                            let _: Option<RowIndex> =
+                                bindings.insert(j, deref_i);
+                        }
+                    }
+                } else {
+                    let _: Option<RowIndex> =
+                        bindings.insert(row_j.index, row_i.index);
                 }
             }
             (Type::Var(_), Type::Var(_)) => {
                 match (bindings.get(&i), bindings.get(&j)) {
                     (None, None) => {
                         let _: Option<RowIndex> = bindings.insert(j, i);
-                        mgu[i] = true;
                     }
                     (None, Some(_)) => {
                         let _: Option<RowIndex> = bindings.insert(j, i);
-                        mgu[i] = true;
                     }
                     (Some(_), None) => {
                         let _: Option<RowIndex> = bindings.insert(i, j);
-                        mgu[j] = true;
                     }
                     (Some(bound_i), Some(bound_j)) => {
-                        stack_x.push(*bound_i);
-                        stack_y.push(*bound_j);
+                        stack_x.push(deref(bindings, *bound_i));
+                        stack_y.push(deref(bindings, *bound_j));
                     }
                 }
             }
         }
     }
-    Some(mgu)
+    true
 }
 
 fn main() {
@@ -209,13 +235,16 @@ fn main() {
     let mut vars: HashMap<char, RowIndex> = HashMap::new();
     let i_y: RowIndex = set_row(&mut rows, &mut vars, &y);
     let i_x: RowIndex = set_row(&mut rows, &mut vars, &x);
+    println!("{:#?}", rows);
     let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
-    if let Some(mgu) = unify(&rows, &mut bindings, i_x, i_y) {
-        for (i, b) in mgu.iter().enumerate() {
-            if *b {
-                println!("{:#?}", rows[i])
-            }
+    if unify(&rows, &mut bindings, i_x, i_y) {
+        println!();
+        for (k, v) in bindings.iter() {
+            println!(
+                "{:>2} -> {}",
+                get_term(&rows, &bindings, *v),
+                get_term(&rows, &bindings, *k),
+            );
         }
     }
-    println!("{:#?}", bindings)
 }
