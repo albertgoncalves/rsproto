@@ -23,7 +23,6 @@ export SHARED_FLAGS=(
     -W "missing-copy-implementations"
     -W "missing-debug-implementations"
     -W "non-ascii-idents"
-    -W "single-use-lifetimes"
     -W "trivial-casts"
     -W "trivial-numeric-casts"
     -W "unreachable-pub"
@@ -32,7 +31,6 @@ export SHARED_FLAGS=(
     -W "unused-lifetimes"
     -W "unused-qualifications"
     -W "unused-results"
-    -W "variant-size-differences"
 )
 export MAIN_FLAGS=(
     -C "panic=abort"
