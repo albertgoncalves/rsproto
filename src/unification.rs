@@ -27,22 +27,25 @@ struct Row {
     components: Vec<RowIndex>,
 }
 
-macro_rules! next {
-    ($chars:expr $(,)?) => {{
-        let _: Option<char> = $chars.next();
-    }};
-}
+fn get_func(chars: &mut Peekable<Chars<'_>>) -> Expr {
+    if let Some(functor) = chars.next() {
+        let mut components: Vec<Expr> = Vec::new();
 
-fn get_func(functor: char, chars: &mut Peekable<Chars<'_>>) -> Expr {
-    let mut components: Vec<Expr> = Vec::new();
-    while let Some(c) = chars.peek() {
-        match c {
-            ')' => {
-                next!(chars);
-                return Expr::Func(functor, components);
+        macro_rules! next {
+            () => {{
+                let _: Option<char> = chars.next();
+            }};
+        }
+
+        while let Some(c) = chars.peek() {
+            match c {
+                ')' => {
+                    next!();
+                    return Expr::Func(functor, components);
+                }
+                _ if c.is_whitespace() => next!(),
+                _ => components.push(get_expr(chars)),
             }
-            _ if c.is_whitespace() => next!(chars),
-            _ => components.push(get_expr(chars)),
         }
     }
     panic!()
@@ -50,15 +53,16 @@ fn get_func(functor: char, chars: &mut Peekable<Chars<'_>>) -> Expr {
 
 fn get_expr(chars: &mut Peekable<Chars<'_>>) -> Expr {
     if let Some(c) = chars.next() {
-        if c.is_alphabetic() {
-            if c.is_uppercase() {
-                return Expr::Atom(Type::Var(c));
-            } else if let Some('(') = chars.peek() {
-                next!(chars);
-                return get_func(c, chars);
-            } else {
-                return Expr::Atom(Type::Const(c));
+        match c {
+            '(' => return get_func(chars),
+            _ if c.is_alphabetic() => {
+                if c.is_uppercase() {
+                    return Expr::Atom(Type::Var(c));
+                } else {
+                    return Expr::Atom(Type::Const(c));
+                }
             }
+            _ => (),
         }
     }
     panic!()
@@ -141,10 +145,11 @@ fn get_term(
             components.push(get_term(rows, bindings, deref_i));
         }
     }
-    let components: String = components.join(", ");
-    let mut s: String = String::with_capacity(components.len() + 3);
-    s.push(row.functor);
+    let components: String = components.join(" ");
+    let mut s: String = String::with_capacity(components.len() + 4);
     s.push('(');
+    s.push(row.functor);
+    s.push(' ');
     s.push_str(&components);
     s.push(')');
     s
@@ -247,7 +252,7 @@ mod tests {
     #[test]
     fn test_parse() {
         assert_eq!(
-            parse("p(Z h(Z W) f(W))"),
+            parse("(p Z (h Z W) (f W))"),
             func!(
                 'p',
                 vec![
@@ -258,7 +263,7 @@ mod tests {
             ),
         );
         assert_eq!(
-            parse("p(f(X) h(Y f(a)) Y)"),
+            parse("(p (f X) (h Y (f a)) Y)"),
             func!(
                 'p',
                 vec![
@@ -276,29 +281,47 @@ mod tests {
         );
     }
 
+    macro_rules! get_unifier {
+        ($rows:expr, $bindings:expr, $vars:expr, $x:expr $(,)?) => {
+            get_term($rows, $bindings, *$vars.get(&$x).unwrap())
+        };
+    }
+
     #[test]
-    fn test_unify() {
-        let x: Expr = parse("p(Z h(Z W) f(W))");
-        let y: Expr = parse("p(f(X) h(Y f(a)) Y)");
+    fn test_unify_1() {
+        let x: Expr = parse("(p Z (h Z W) (f W))");
+        let y: Expr = parse("(p (f X) (h Y (f a)) Y)");
         let mut rows: Vec<Row> = Vec::new();
         let mut vars: HashMap<char, RowIndex> = HashMap::new();
         let init_y: RowIndex = set_row(&mut rows, &mut vars, &y);
         let init_x: RowIndex = set_row(&mut rows, &mut vars, &x);
         let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
 
-        macro_rules! get_unifier {
-            ($x:expr $(,)?) => {
-                get_term(&rows, &bindings, *vars.get(&$x).unwrap())
-            };
-        }
+        assert!(unify(&rows, &mut bindings, init_x, init_y));
+        assert_eq!(get_unifier!(&rows, &bindings, vars, 'W'), "(f a)");
+        assert_eq!(get_unifier!(&rows, &bindings, vars, 'X'), "(f a)");
+        assert_eq!(get_unifier!(&rows, &bindings, vars, 'Y'), "(f (f a))");
+        assert_eq!(get_unifier!(&rows, &bindings, vars, 'Z'), "(f (f a))");
+    }
 
-        if unify(&rows, &mut bindings, init_x, init_y) {
-            assert_eq!(get_unifier!('W'), "f(a)");
-            assert_eq!(get_unifier!('X'), "f(a)");
-            assert_eq!(get_unifier!('Y'), "f(f(a))");
-            assert_eq!(get_unifier!('Z'), "f(f(a))");
-        } else {
-            assert!(false);
-        }
+    #[test]
+    fn test_unify_2() {
+        let x: Expr = parse("(f U (g W X) W b)");
+        let y: Expr = parse("(f (g (h a Z) W) U (h a Y) Y)");
+        let mut rows: Vec<Row> = Vec::new();
+        let mut vars: HashMap<char, RowIndex> = HashMap::new();
+        let init_y: RowIndex = set_row(&mut rows, &mut vars, &y);
+        let init_x: RowIndex = set_row(&mut rows, &mut vars, &x);
+        let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
+
+        assert!(unify(&rows, &mut bindings, init_x, init_y));
+        assert_eq!(
+            get_unifier!(&rows, &bindings, vars, 'U'),
+            "(g (h a b) (h a b))",
+        );
+        assert_eq!(get_unifier!(&rows, &bindings, vars, 'W'), "(h a b)");
+        assert_eq!(get_unifier!(&rows, &bindings, vars, 'X'), "(h a b)");
+        assert_eq!(get_unifier!(&rows, &bindings, vars, 'Y'), "b");
+        assert_eq!(get_unifier!(&rows, &bindings, vars, 'Z'), "b");
     }
 }
