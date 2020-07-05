@@ -202,6 +202,7 @@ mod tests {
 
     #[test]
     fn test() {
+        /* NOTE: `x = p(Z, h(Z, W), f(W))` */
         let x: Expr = func!(
             'p',
             vec![
@@ -210,6 +211,7 @@ mod tests {
                 func!('f', vec![atom!(Var, 'W')]),
             ],
         );
+        /* NOTE: `y = p(f(X), h(Y, f(a)), Y)` */
         let y: Expr = func!(
             'p',
             vec![
