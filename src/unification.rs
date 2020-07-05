@@ -296,7 +296,6 @@ mod tests {
         let init_y: RowIndex = set_row(&mut rows, &mut vars, &y);
         let init_x: RowIndex = set_row(&mut rows, &mut vars, &x);
         let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
-
         assert!(unify(&rows, &mut bindings, init_x, init_y));
         assert_eq!(get_unifier!(&rows, &bindings, vars, 'W'), "(f a)");
         assert_eq!(get_unifier!(&rows, &bindings, vars, 'X'), "(f a)");
@@ -313,7 +312,6 @@ mod tests {
         let init_y: RowIndex = set_row(&mut rows, &mut vars, &y);
         let init_x: RowIndex = set_row(&mut rows, &mut vars, &x);
         let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
-
         assert!(unify(&rows, &mut bindings, init_x, init_y));
         assert_eq!(
             get_unifier!(&rows, &bindings, vars, 'U'),
