@@ -109,15 +109,16 @@ fn get_term(
 fn unify(
     rows: &[Row],
     bindings: &mut HashMap<RowIndex, RowIndex>,
-    i_x: RowIndex,
-    i_y: RowIndex,
+    init_x: RowIndex,
+    init_y: RowIndex,
 ) -> bool {
     let mut stack_x: Vec<RowIndex> = Vec::new();
     let mut stack_y: Vec<RowIndex> = Vec::new();
 
     macro_rules! const_var {
-        ($index:expr, $row_a:expr, $row_b:expr $(,)?) => {{
-            if let Some(bound_index) = bindings.get(&$row_a.index).map(|x| *x)
+        ($index:expr, $row_const:expr, $row_var:expr $(,)?) => {{
+            if let Some(bound_index) =
+                bindings.get(&$row_var.index).map(|x| *x)
             {
                 let deref_index: RowIndex = deref(bindings, bound_index);
                 match rows[deref_index].type_ {
@@ -132,13 +133,13 @@ fn unify(
                 }
             } else {
                 let _: Option<RowIndex> =
-                    bindings.insert($row_a.index, $row_b.index);
+                    bindings.insert($row_var.index, $row_const.index);
             }
         }};
     }
 
-    stack_x.push(i_x);
-    stack_y.push(i_y);
+    stack_x.push(init_x);
+    stack_y.push(init_y);
     while let (Some(i), Some(j)) = (stack_x.pop(), stack_y.pop()) {
         let row_i: &Row = &rows[i];
         let row_j: &Row = &rows[j];
@@ -155,8 +156,8 @@ fn unify(
                     return false;
                 }
             }
-            (Type::Const(_), Type::Var(_)) => const_var!(i, row_j, row_i),
-            (Type::Var(_), Type::Const(_)) => const_var!(j, row_i, row_j),
+            (Type::Const(_), Type::Var(_)) => const_var!(i, row_i, row_j),
+            (Type::Var(_), Type::Const(_)) => const_var!(j, row_j, row_i),
             (Type::Var(_), Type::Var(_)) => {
                 match (bindings.get(&i), bindings.get(&j)) {
                     (None, None) => {
@@ -179,55 +180,66 @@ fn unify(
     true
 }
 
-macro_rules! func {
-    ($x:expr, $xs:expr $(,)?) => {
-        Expr::Func($x, $xs)
-    };
-}
+#[cfg(test)]
+mod tests {
+    use super::{get_term, set_row, unify, Expr, Row, RowIndex, Type};
+    use std::collections::HashMap;
 
-macro_rules! atom {
-    (Var, $x:expr $(,)?) => {
-        Expr::Atom(Type::Var($x))
-    };
-    (Const, $x:expr $(,)?) => {
-        Expr::Atom(Type::Const($x))
-    };
-}
+    macro_rules! func {
+        ($x:expr, $xs:expr $(,)?) => {
+            Expr::Func($x, $xs)
+        };
+    }
 
-fn main() {
-    let x: Expr = func!(
-        'p',
-        vec![
-            atom!(Var, 'Z'),
-            func!('h', vec![atom!(Var, 'Z'), atom!(Var, 'W')]),
-            func!('f', vec![atom!(Var, 'W')]),
-        ],
-    );
-    let y: Expr = func!(
-        'p',
-        vec![
-            func!('f', vec![atom!(Var, 'X')]),
-            func!(
-                'h',
-                vec![atom!(Var, 'Y'), func!('f', vec![atom!(Const, 'a')])],
-            ),
-            atom!(Var, 'Y'),
-        ],
-    );
-    let mut rows: Vec<Row> = Vec::new();
-    let mut vars: HashMap<char, RowIndex> = HashMap::new();
-    let i_y: RowIndex = set_row(&mut rows, &mut vars, &y);
-    let i_x: RowIndex = set_row(&mut rows, &mut vars, &x);
-    let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
-    if unify(&rows, &mut bindings, i_x, i_y) {
-        println!("{{");
-        for (k, v) in bindings.iter() {
-            println!(
-                "    {}: {},",
-                rows[*k].functor,
-                get_term(&rows, &bindings, *v),
-            );
+    macro_rules! atom {
+        (Var, $x:expr $(,)?) => {
+            Expr::Atom(Type::Var($x))
+        };
+        (Const, $x:expr $(,)?) => {
+            Expr::Atom(Type::Const($x))
+        };
+    }
+
+    #[test]
+    fn test() {
+        let x: Expr = func!(
+            'p',
+            vec![
+                atom!(Var, 'Z'),
+                func!('h', vec![atom!(Var, 'Z'), atom!(Var, 'W')]),
+                func!('f', vec![atom!(Var, 'W')]),
+            ],
+        );
+        let y: Expr = func!(
+            'p',
+            vec![
+                func!('f', vec![atom!(Var, 'X')]),
+                func!(
+                    'h',
+                    vec![atom!(Var, 'Y'), func!('f', vec![atom!(Const, 'a')])],
+                ),
+                atom!(Var, 'Y'),
+            ],
+        );
+        let mut rows: Vec<Row> = Vec::new();
+        let mut vars: HashMap<char, RowIndex> = HashMap::new();
+        let init_y: RowIndex = set_row(&mut rows, &mut vars, &y);
+        let init_x: RowIndex = set_row(&mut rows, &mut vars, &x);
+        let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
+
+        macro_rules! get_unifier {
+            ($x:expr $(,)?) => {
+                get_term(&rows, &bindings, *vars.get(&$x).unwrap())
+            };
         }
-        println!("}}");
+
+        if unify(&rows, &mut bindings, init_x, init_y) {
+            assert_eq!(get_unifier!('W'), "f(a)");
+            assert_eq!(get_unifier!('X'), "f(a)");
+            assert_eq!(get_unifier!('Y'), "f(f(a))");
+            assert_eq!(get_unifier!('Z'), "f(f(a))");
+        } else {
+            assert!(false);
+        }
     }
 }

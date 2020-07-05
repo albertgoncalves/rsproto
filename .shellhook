@@ -35,7 +35,7 @@ export SHARED_FLAGS=(
 export MAIN_FLAGS=(
     -C "panic=abort"
 )
-export RUST_BACKTRACE=1
+export RUST_BACKTRACE=0
 
 runr () {
     handle=$(echo "$1" | sed 's/^[a-z\/]*\/\(.*\)\.[a-z]*$/\1/')
