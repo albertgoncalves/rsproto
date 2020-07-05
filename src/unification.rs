@@ -27,23 +27,22 @@ struct Row {
     components: Vec<RowIndex>,
 }
 
+type Vars = HashMap<char, RowIndex>;
+
+type Bindings = HashMap<RowIndex, RowIndex>;
+
 fn get_func(chars: &mut Peekable<Chars<'_>>) -> Expr {
     if let Some(functor) = chars.next() {
         let mut components: Vec<Expr> = Vec::new();
-
-        macro_rules! next {
-            () => {{
-                let _: Option<char> = chars.next();
-            }};
-        }
-
         while let Some(c) = chars.peek() {
             match c {
                 ')' => {
-                    next!();
+                    let _: Option<char> = chars.next();
                     return Expr::Func(functor, components);
                 }
-                _ if c.is_whitespace() => next!(),
+                _ if c.is_whitespace() => {
+                    let _: Option<char> = chars.next();
+                }
                 _ => components.push(get_expr(chars)),
             }
         }
@@ -55,12 +54,11 @@ fn get_expr(chars: &mut Peekable<Chars<'_>>) -> Expr {
     if let Some(c) = chars.next() {
         match c {
             '(' => return get_func(chars),
-            _ if c.is_alphabetic() => {
-                if c.is_uppercase() {
-                    return Expr::Atom(Type::Var(c));
-                } else {
-                    return Expr::Atom(Type::Const(c));
-                }
+            _ if c.is_alphabetic() && c.is_uppercase() => {
+                return Expr::Atom(Type::Var(c))
+            }
+            _ if c.is_alphabetic() && c.is_lowercase() => {
+                return Expr::Atom(Type::Const(c))
             }
             _ => (),
         }
@@ -73,11 +71,7 @@ fn parse(string: &str) -> Expr {
     get_expr(&mut chars)
 }
 
-fn set_row(
-    rows: &mut Vec<Row>,
-    vars: &mut HashMap<char, RowIndex>,
-    expr: &Expr,
-) -> RowIndex {
+fn set_row(rows: &mut Vec<Row>, vars: &mut Vars, expr: &Expr) -> RowIndex {
     match expr {
         Expr::Atom(t) => {
             let n: RowIndex = rows.len();
@@ -119,26 +113,26 @@ fn set_row(
     rows.len() - 1
 }
 
-fn deref(
-    bindings: &HashMap<RowIndex, RowIndex>,
-    mut index: RowIndex,
-) -> RowIndex {
+fn deref(bindings: &Bindings, mut index: RowIndex) -> RowIndex {
+    let mut prev_indices: Vec<RowIndex> = Vec::new();
     while let Some(next_index) = bindings.get(&index) {
         index = *next_index;
+        for prev_index in &prev_indices {
+            if index == *prev_index {
+                return index;
+            }
+        }
+        prev_indices.push(index);
     }
     index
 }
 
-fn get_term(
-    rows: &[Row],
-    bindings: &HashMap<RowIndex, RowIndex>,
-    index: RowIndex,
-) -> String {
+fn get_term(rows: &[Row], bindings: &Bindings, index: RowIndex) -> String {
     let row: &Row = &rows[deref(bindings, index)];
     if row.arity == 0 {
         return row.functor.to_string();
     }
-    let mut components: Vec<String> = Vec::new();
+    let mut components: Vec<String> = Vec::with_capacity(row.components.len());
     for i in &row.components {
         let deref_i: RowIndex = deref(bindings, *i);
         if index != deref_i {
@@ -157,12 +151,12 @@ fn get_term(
 
 fn unify(
     rows: &[Row],
-    bindings: &mut HashMap<RowIndex, RowIndex>,
+    bindings: &mut Bindings,
     init_x: RowIndex,
     init_y: RowIndex,
 ) -> bool {
-    let mut stack_x: Vec<RowIndex> = Vec::new();
-    let mut stack_y: Vec<RowIndex> = Vec::new();
+    let mut stack_x: Vec<RowIndex> = vec![init_x];
+    let mut stack_y: Vec<RowIndex> = vec![init_y];
 
     macro_rules! const_var {
         ($index:expr, $row_const:expr, $row_var:expr $(,)?) => {{
@@ -187,8 +181,6 @@ fn unify(
         }};
     }
 
-    stack_x.push(init_x);
-    stack_y.push(init_y);
     while let (Some(i), Some(j)) = (stack_x.pop(), stack_y.pop()) {
         let row_i: &Row = &rows[i];
         let row_j: &Row = &rows[j];
@@ -231,7 +223,10 @@ fn unify(
 
 #[cfg(test)]
 mod tests {
-    use super::{get_term, parse, set_row, unify, Expr, Row, RowIndex, Type};
+    use super::{
+        get_term, parse, set_row, unify, Bindings, Expr, Row, RowIndex, Type,
+        Vars,
+    };
     use std::collections::HashMap;
 
     macro_rules! func {
@@ -281,45 +276,48 @@ mod tests {
         );
     }
 
-    macro_rules! get_unifier {
-        ($rows:expr, $bindings:expr, $vars:expr, $x:expr $(,)?) => {
-            get_term($rows, $bindings, *$vars.get(&$x).unwrap())
-        };
+    fn unify_and_assert(x: &str, y: &str, pairs: &[(char, &str)]) {
+        let mut rows: Vec<Row> = Vec::new();
+        let mut vars: Vars = HashMap::new();
+        let init_y: RowIndex = set_row(&mut rows, &mut vars, &parse(y));
+        let init_x: RowIndex = set_row(&mut rows, &mut vars, &parse(x));
+        let mut bindings: Bindings = HashMap::new();
+        assert!(unify(&rows, &mut bindings, init_x, init_y));
+        for (a, b) in pairs.iter() {
+            assert_eq!(get_term(&rows, &bindings, *vars.get(a).unwrap()), *b);
+        }
+    }
+
+    #[test]
+    fn test_unify_0() {
+        unify_and_assert("(f A)", "(f B)", &vec![('A', "B")]);
     }
 
     #[test]
     fn test_unify_1() {
-        let x: Expr = parse("(p Z (h Z W) (f W))");
-        let y: Expr = parse("(p (f X) (h Y (f a)) Y)");
-        let mut rows: Vec<Row> = Vec::new();
-        let mut vars: HashMap<char, RowIndex> = HashMap::new();
-        let init_y: RowIndex = set_row(&mut rows, &mut vars, &y);
-        let init_x: RowIndex = set_row(&mut rows, &mut vars, &x);
-        let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
-        assert!(unify(&rows, &mut bindings, init_x, init_y));
-        assert_eq!(get_unifier!(&rows, &bindings, vars, 'W'), "(f a)");
-        assert_eq!(get_unifier!(&rows, &bindings, vars, 'X'), "(f a)");
-        assert_eq!(get_unifier!(&rows, &bindings, vars, 'Y'), "(f (f a))");
-        assert_eq!(get_unifier!(&rows, &bindings, vars, 'Z'), "(f (f a))");
+        unify_and_assert("(f A B)", "(f B A)", &vec![('A', "B"), ('B', "A")]);
     }
 
     #[test]
     fn test_unify_2() {
-        let x: Expr = parse("(f U (g W X) W b)");
-        let y: Expr = parse("(f (g (h a Z) W) U (h a Y) Y)");
-        let mut rows: Vec<Row> = Vec::new();
-        let mut vars: HashMap<char, RowIndex> = HashMap::new();
-        let init_y: RowIndex = set_row(&mut rows, &mut vars, &y);
-        let init_x: RowIndex = set_row(&mut rows, &mut vars, &x);
-        let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
-        assert!(unify(&rows, &mut bindings, init_x, init_y));
-        assert_eq!(
-            get_unifier!(&rows, &bindings, vars, 'U'),
-            "(g (h a b) (h a b))",
+        unify_and_assert(
+            "(p Z (h Z W) (f W))",
+            "(p (f X) (h Y (f a)) Y)",
+            &vec![
+                ('W', "(f a)"),
+                ('X', "(f a)"),
+                ('Y', "(f (f a))"),
+                ('Z', "(f (f a))"),
+            ],
         );
-        assert_eq!(get_unifier!(&rows, &bindings, vars, 'W'), "(h a b)");
-        assert_eq!(get_unifier!(&rows, &bindings, vars, 'X'), "(h a b)");
-        assert_eq!(get_unifier!(&rows, &bindings, vars, 'Y'), "b");
-        assert_eq!(get_unifier!(&rows, &bindings, vars, 'Z'), "b");
+    }
+
+    #[test]
+    fn test_unify_3() {
+        unify_and_assert(
+            "(f U (g W X) W b)",
+            "(f (g (h a Z) W) U (h a Y) Y)",
+            &vec![('W', "(h a b)"), ('X', "(h a b)"), ('Y', "b"), ('Z', "b")],
+        )
     }
 }
