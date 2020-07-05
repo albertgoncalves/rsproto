@@ -25,21 +25,6 @@ struct Row {
     components: Vec<RowIndex>,
 }
 
-macro_rules! func {
-    ($x:expr, $xs:expr $(,)?) => {
-        Expr::Func($x, $xs)
-    };
-}
-
-macro_rules! atom {
-    (Var, $x:expr $(,)?) => {
-        Expr::Atom(Type::Var($x))
-    };
-    (Const, $x:expr $(,)?) => {
-        Expr::Atom(Type::Const($x))
-    };
-}
-
 fn set_row(
     rows: &mut Vec<Row>,
     vars: &mut HashMap<char, RowIndex>,
@@ -101,7 +86,7 @@ fn get_term(
     bindings: &HashMap<RowIndex, RowIndex>,
     index: RowIndex,
 ) -> String {
-    let row: &Row = &rows[index];
+    let row: &Row = &rows[deref(bindings, index)];
     if row.arity == 0 {
         return row.functor.to_string();
     }
@@ -109,12 +94,7 @@ fn get_term(
     for i in &row.components {
         let deref_i: RowIndex = deref(bindings, *i);
         if index != deref_i {
-            let bound_row: &Row = &rows[deref_i];
-            if bound_row.arity == 0 {
-                components.push(bound_row.functor.to_string());
-            } else {
-                components.push(get_term(rows, bindings, deref_i));
-            }
+            components.push(get_term(rows, bindings, deref_i));
         }
     }
     let components: String = components.join(", ");
@@ -163,25 +143,7 @@ fn unify(
                         }
                         Type::Var(_) => {
                             let _: Option<RowIndex> =
-                                bindings.insert(i, deref_j);
-                        }
-                    }
-                } else {
-                    let _: Option<RowIndex> =
-                        bindings.insert(row_i.index, row_j.index);
-                }
-            }
-            (Type::Var(_), Type::Const(_)) => {
-                if let Some(bound_i) = bindings.get(&row_i.index).map(|x| *x) {
-                    let deref_i: RowIndex = deref(bindings, bound_i);
-                    match rows[deref_i].type_ {
-                        Type::Const(_) => {
-                            stack_x.push(deref_i);
-                            stack_y.push(j);
-                        }
-                        Type::Var(_) => {
-                            let _: Option<RowIndex> =
-                                bindings.insert(j, deref_i);
+                                bindings.insert(deref_j, i);
                         }
                     }
                 } else {
@@ -189,16 +151,34 @@ fn unify(
                         bindings.insert(row_j.index, row_i.index);
                 }
             }
+            (Type::Var(_), Type::Const(_)) => {
+                if let Some(bound_i) = bindings.get(&row_i.index).map(|x| *x) {
+                    let deref_i: RowIndex = deref(bindings, bound_i);
+                    match rows[deref_i].type_ {
+                        Type::Const(_) => {
+                            stack_x.push(j);
+                            stack_y.push(deref_i);
+                        }
+                        Type::Var(_) => {
+                            let _: Option<RowIndex> =
+                                bindings.insert(deref_i, j);
+                        }
+                    }
+                } else {
+                    let _: Option<RowIndex> =
+                        bindings.insert(row_i.index, row_j.index);
+                }
+            }
             (Type::Var(_), Type::Var(_)) => {
                 match (bindings.get(&i), bindings.get(&j)) {
                     (None, None) => {
-                        let _: Option<RowIndex> = bindings.insert(j, i);
+                        let _: Option<RowIndex> = bindings.insert(i, j);
                     }
                     (None, Some(_)) => {
-                        let _: Option<RowIndex> = bindings.insert(j, i);
+                        let _: Option<RowIndex> = bindings.insert(i, j);
                     }
                     (Some(_), None) => {
-                        let _: Option<RowIndex> = bindings.insert(i, j);
+                        let _: Option<RowIndex> = bindings.insert(j, i);
                     }
                     (Some(bound_i), Some(bound_j)) => {
                         stack_x.push(deref(bindings, *bound_i));
@@ -209,6 +189,21 @@ fn unify(
         }
     }
     true
+}
+
+macro_rules! func {
+    ($x:expr, $xs:expr $(,)?) => {
+        Expr::Func($x, $xs)
+    };
+}
+
+macro_rules! atom {
+    (Var, $x:expr $(,)?) => {
+        Expr::Atom(Type::Var($x))
+    };
+    (Const, $x:expr $(,)?) => {
+        Expr::Atom(Type::Const($x))
+    };
 }
 
 fn main() {
@@ -235,16 +230,16 @@ fn main() {
     let mut vars: HashMap<char, RowIndex> = HashMap::new();
     let i_y: RowIndex = set_row(&mut rows, &mut vars, &y);
     let i_x: RowIndex = set_row(&mut rows, &mut vars, &x);
-    println!("{:#?}", rows);
     let mut bindings: HashMap<RowIndex, RowIndex> = HashMap::new();
     if unify(&rows, &mut bindings, i_x, i_y) {
-        println!();
+        println!("{{");
         for (k, v) in bindings.iter() {
             println!(
-                "{:>2} -> {}",
+                "    {}: {},",
+                rows[*k].functor,
                 get_term(&rows, &bindings, *v),
-                get_term(&rows, &bindings, *k),
             );
         }
+        println!("}}");
     }
 }
