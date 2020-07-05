@@ -1,14 +1,16 @@
 use std::collections::HashMap;
+use std::iter::Peekable;
+use std::str::Chars;
 
 /* NOTE: See `https://arxiv.org/abs/cs/0603080v1`. */
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 enum Type {
     Var(char),
     Const(char),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Expr {
     Atom(Type),
     Func(char, Vec<Expr>),
@@ -23,6 +25,48 @@ struct Row {
     type_: Type,
     arity: usize,
     components: Vec<RowIndex>,
+}
+
+macro_rules! next {
+    ($chars:expr $(,)?) => {{
+        let _: Option<char> = $chars.next();
+    }};
+}
+
+fn get_func(functor: char, chars: &mut Peekable<Chars<'_>>) -> Expr {
+    let mut components: Vec<Expr> = Vec::new();
+    while let Some(c) = chars.peek() {
+        match c {
+            ')' => {
+                next!(chars);
+                return Expr::Func(functor, components);
+            }
+            _ if c.is_whitespace() => next!(chars),
+            _ => components.push(get_expr(chars)),
+        }
+    }
+    panic!()
+}
+
+fn get_expr(chars: &mut Peekable<Chars<'_>>) -> Expr {
+    if let Some(c) = chars.next() {
+        if c.is_alphabetic() {
+            if c.is_uppercase() {
+                return Expr::Atom(Type::Var(c));
+            } else if let Some('(') = chars.peek() {
+                next!(chars);
+                return get_func(c, chars);
+            } else {
+                return Expr::Atom(Type::Const(c));
+            }
+        }
+    }
+    panic!()
+}
+
+fn parse(string: &str) -> Expr {
+    let mut chars: Peekable<Chars<'_>> = string.chars().peekable();
+    get_expr(&mut chars)
 }
 
 fn set_row(
@@ -182,7 +226,7 @@ fn unify(
 
 #[cfg(test)]
 mod tests {
-    use super::{get_term, set_row, unify, Expr, Row, RowIndex, Type};
+    use super::{get_term, parse, set_row, unify, Expr, Row, RowIndex, Type};
     use std::collections::HashMap;
 
     macro_rules! func {
@@ -201,28 +245,41 @@ mod tests {
     }
 
     #[test]
-    fn test() {
-        /* NOTE: `x = p(Z, h(Z, W), f(W))` */
-        let x: Expr = func!(
-            'p',
-            vec![
-                atom!(Var, 'Z'),
-                func!('h', vec![atom!(Var, 'Z'), atom!(Var, 'W')]),
-                func!('f', vec![atom!(Var, 'W')]),
-            ],
+    fn test_parse() {
+        assert_eq!(
+            parse("p(Z h(Z W) f(W))"),
+            func!(
+                'p',
+                vec![
+                    atom!(Var, 'Z'),
+                    func!('h', vec![atom!(Var, 'Z'), atom!(Var, 'W')]),
+                    func!('f', vec![atom!(Var, 'W')]),
+                ],
+            ),
         );
-        /* NOTE: `y = p(f(X), h(Y, f(a)), Y)` */
-        let y: Expr = func!(
-            'p',
-            vec![
-                func!('f', vec![atom!(Var, 'X')]),
-                func!(
-                    'h',
-                    vec![atom!(Var, 'Y'), func!('f', vec![atom!(Const, 'a')])],
-                ),
-                atom!(Var, 'Y'),
-            ],
+        assert_eq!(
+            parse("p(f(X) h(Y f(a)) Y)"),
+            func!(
+                'p',
+                vec![
+                    func!('f', vec![atom!(Var, 'X')]),
+                    func!(
+                        'h',
+                        vec![
+                            atom!(Var, 'Y'),
+                            func!('f', vec![atom!(Const, 'a')])
+                        ],
+                    ),
+                    atom!(Var, 'Y'),
+                ],
+            ),
         );
+    }
+
+    #[test]
+    fn test_unify() {
+        let x: Expr = parse("p(Z h(Z W) f(W))");
+        let y: Expr = parse("p(f(X) h(Y f(a)) Y)");
         let mut rows: Vec<Row> = Vec::new();
         let mut vars: HashMap<char, RowIndex> = HashMap::new();
         let init_y: RowIndex = set_row(&mut rows, &mut vars, &y);
