@@ -320,4 +320,13 @@ mod tests {
             &vec![('W', "(h a b)"), ('X', "(h a b)"), ('Y', "b"), ('Z', "b")],
         )
     }
+
+    #[test]
+    fn test_unify_4() {
+        unify_and_assert(
+            "(f X (g Y))",
+            "(f (g Z) W)",
+            &vec![('X', "(g Z)"), ('W', "(g Y)")],
+        )
+    }
 }
