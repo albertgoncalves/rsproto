@@ -112,9 +112,31 @@ fn unify(
     i_x: RowIndex,
     i_y: RowIndex,
 ) -> bool {
-    let n: usize = rows.len();
-    let mut stack_x: Vec<RowIndex> = Vec::with_capacity(n);
-    let mut stack_y: Vec<RowIndex> = Vec::with_capacity(n);
+    let mut stack_x: Vec<RowIndex> = Vec::new();
+    let mut stack_y: Vec<RowIndex> = Vec::new();
+
+    macro_rules! const_var {
+        ($index:expr, $row_a:expr, $row_b:expr $(,)?) => {{
+            if let Some(bound_index) = bindings.get(&$row_a.index).map(|x| *x)
+            {
+                let deref_index: RowIndex = deref(bindings, bound_index);
+                match rows[deref_index].type_ {
+                    Type::Const(_) => {
+                        stack_x.push($index);
+                        stack_y.push(deref_index);
+                    }
+                    Type::Var(_) => {
+                        let _: Option<RowIndex> =
+                            bindings.insert(deref_index, $index);
+                    }
+                }
+            } else {
+                let _: Option<RowIndex> =
+                    bindings.insert($row_a.index, $row_b.index);
+            }
+        }};
+    }
+
     stack_x.push(i_x);
     stack_y.push(i_y);
     while let (Some(i), Some(j)) = (stack_x.pop(), stack_y.pop()) {
@@ -133,42 +155,8 @@ fn unify(
                     return false;
                 }
             }
-            (Type::Const(_), Type::Var(_)) => {
-                if let Some(bound_j) = bindings.get(&row_j.index).map(|x| *x) {
-                    let deref_j: RowIndex = deref(bindings, bound_j);
-                    match rows[deref_j].type_ {
-                        Type::Const(_) => {
-                            stack_x.push(i);
-                            stack_y.push(deref_j);
-                        }
-                        Type::Var(_) => {
-                            let _: Option<RowIndex> =
-                                bindings.insert(deref_j, i);
-                        }
-                    }
-                } else {
-                    let _: Option<RowIndex> =
-                        bindings.insert(row_j.index, row_i.index);
-                }
-            }
-            (Type::Var(_), Type::Const(_)) => {
-                if let Some(bound_i) = bindings.get(&row_i.index).map(|x| *x) {
-                    let deref_i: RowIndex = deref(bindings, bound_i);
-                    match rows[deref_i].type_ {
-                        Type::Const(_) => {
-                            stack_x.push(j);
-                            stack_y.push(deref_i);
-                        }
-                        Type::Var(_) => {
-                            let _: Option<RowIndex> =
-                                bindings.insert(deref_i, j);
-                        }
-                    }
-                } else {
-                    let _: Option<RowIndex> =
-                        bindings.insert(row_i.index, row_j.index);
-                }
-            }
+            (Type::Const(_), Type::Var(_)) => const_var!(i, row_j, row_i),
+            (Type::Var(_), Type::Const(_)) => const_var!(j, row_i, row_j),
             (Type::Var(_), Type::Var(_)) => {
                 match (bindings.get(&i), bindings.get(&j)) {
                     (None, None) => {
