@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -114,15 +114,13 @@ fn set_row(rows: &mut Vec<Row>, vars: &mut Vars, expr: &Expr) -> RowIndex {
 }
 
 fn deref(bindings: &Bindings, mut index: RowIndex) -> RowIndex {
-    let mut prev_indices: Vec<RowIndex> = Vec::new();
+    let mut prev_indices: HashSet<RowIndex> = HashSet::new();
     while let Some(next_index) = bindings.get(&index) {
         index = *next_index;
-        for prev_index in &prev_indices {
-            if index == *prev_index {
-                return index;
-            }
+        if prev_indices.contains(&index) {
+            return index;
         }
-        prev_indices.push(index);
+        let _: bool = prev_indices.insert(index);
     }
     index
 }
