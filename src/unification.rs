@@ -74,20 +74,20 @@ fn parse(string: &str) -> Expr {
 fn set_row(rows: &mut Vec<Row>, vars: &mut Vars, expr: &Expr) -> RowIndex {
     match expr {
         Expr::Atom(t) => {
-            let n: RowIndex = rows.len();
+            let index: RowIndex = rows.len();
             let functor: char = match t {
                 Type::Var(f) => {
                     if let Some(index) = vars.get(f) {
                         return *index;
                     } else {
-                        let _: Option<RowIndex> = vars.insert(*f, n);
+                        let _: Option<RowIndex> = vars.insert(*f, index);
                     }
                     *f
                 }
                 Type::Const(f) => *f,
             };
             rows.push(Row {
-                index: n,
+                index,
                 functor,
                 type_: *t,
                 arity: 0,
