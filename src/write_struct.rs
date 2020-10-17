@@ -1,0 +1,42 @@
+use std::env;
+use std::fs::File;
+use std::io::Write;
+use std::io::{Error, ErrorKind};
+use std::mem::size_of;
+use std::path::Path;
+use std::slice::from_raw_parts;
+
+unsafe fn get_u8_slice<T: Sized>(x: &T) -> &[u8] {
+    let x: *const T = x;
+    from_raw_parts(x as *const u8, size_of::<T>())
+}
+
+#[repr(C, packed(2))]
+struct T {
+    a: u32,
+    b: u16,
+    c: u16,
+    d: u16,
+    e: u16,
+}
+
+fn main() -> Result<(), Error> {
+    let x: T = T {
+        a: u32::from_be(0xCAFEBABE),
+        b: u16::from_be(0x0001),
+        c: u16::from_be(0x0010),
+        d: u16::from_be(0x0100),
+        e: u16::from_be(0x1000),
+    };
+    let bytes: &[u8] = unsafe { get_u8_slice(&x) };
+    let mut file: File = File::create(
+        Path::new(
+            &env::var("WD").map_err(|e| Error::new(ErrorKind::Other, e))?,
+        )
+        .join("out")
+        .join("struct.bin"),
+    )?;
+    file.write_all(bytes)?;
+    file.write_all(&[0, 0, 0, 0])?;
+    file.write_all("Hello, world!".as_bytes())
+}
