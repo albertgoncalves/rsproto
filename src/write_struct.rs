@@ -6,6 +6,8 @@ use std::mem::size_of;
 use std::path::Path;
 use std::slice::from_raw_parts;
 
+const CAFEBABE: u32 = 0xCAFEBABE;
+
 unsafe fn get_u8_slice<T: Sized>(x: &T) -> &[u8] {
     let x: *const T = x;
     from_raw_parts(x as *const u8, size_of::<T>())
@@ -22,11 +24,11 @@ struct T {
 
 fn main() -> Result<(), Error> {
     let x: T = T {
-        a: u32::from_be(0xCAFEBABE),
-        b: u16::from_be(0x0001),
-        c: u16::from_be(0x0010),
-        d: u16::from_be(0x0100),
-        e: u16::from_be(0x1000),
+        a: CAFEBABE.to_be(),
+        b: 0x0001_u16.to_be(),
+        c: 0x0010_u16.to_be(),
+        d: 0x0100_u16.to_be(),
+        e: 0x1000_u16.to_be(),
     };
     let bytes: &[u8] = unsafe { get_u8_slice(&x) };
     let mut file: File = File::create(
