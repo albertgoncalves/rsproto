@@ -6,11 +6,11 @@ use std::mem::size_of;
 use std::path::Path;
 use std::slice::from_raw_parts;
 
-const CAFEBABE: u32 = 0xCAFEBABE;
+const CAFEBABE: u32 = 0xCAFE_BABE;
 
-unsafe fn get_u8_slice<T: Sized>(x: &T) -> &[u8] {
+const unsafe fn get_u8_slice<T: Sized>(x: &T) -> &[u8] {
     let x: *const T = x;
-    from_raw_parts(x as *const u8, size_of::<T>())
+    unsafe { from_raw_parts(x.cast::<u8>(), size_of::<T>()) }
 }
 
 #[repr(C, packed(2))]
@@ -32,13 +32,11 @@ fn main() -> Result<(), Error> {
     };
     let bytes: &[u8] = unsafe { get_u8_slice(&x) };
     let mut file: File = File::create(
-        Path::new(
-            &env::var("WD").map_err(|e| Error::new(ErrorKind::Other, e))?,
-        )
-        .join("out")
-        .join("struct.bin"),
+        Path::new(&env::var("WD").map_err(|e| Error::new(ErrorKind::Other, e))?)
+            .join("out")
+            .join("struct.bin"),
     )?;
     file.write_all(bytes)?;
     file.write_all(&[0, 0, 0, 0])?;
-    file.write_all("Hello, world!".as_bytes())
+    file.write_all(b"Hello, world!")
 }

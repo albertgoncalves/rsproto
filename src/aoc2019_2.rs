@@ -6,7 +6,7 @@ use std::path::Path;
 /* NOTE: See `https://adventofcode.com/2019/day/2`. */
 
 fn tokenize(source: &str) -> Vec<u32> {
-    source.split(",").map(|x| x.parse().unwrap()).collect()
+    source.split(',').map(|x| x.parse().unwrap()).collect()
 }
 
 enum OpCode {
@@ -19,10 +19,10 @@ enum OpCode {
 impl From<u32> for OpCode {
     fn from(orig: u32) -> Self {
         match orig {
-            1 => OpCode::Add,
-            2 => OpCode::Mul,
-            99 => OpCode::Halt,
-            _ => OpCode::Unknown,
+            1 => Self::Add,
+            2 => Self::Mul,
+            99 => Self::Halt,
+            _ => Self::Unknown,
         }
     }
 }
@@ -56,7 +56,7 @@ fn main() {
             .join("aoc2019_2.txt"),
     )
     .unwrap();
-    let program: Vec<u32> = tokenize(&source.trim_end());
+    let program: Vec<u32> = tokenize(source.trim_end());
     {
         let mut program: Vec<u32> = program.clone();
         program[1] = 12;
@@ -71,7 +71,7 @@ fn main() {
                 program[1] = a;
                 program[2] = b;
                 eval(&mut program);
-                if program[0] == 19690720 {
+                if program[0] == 19_690_720 {
                     println!("{}", (100 * a) + b);
                 }
             }

@@ -1,3 +1,4 @@
+use std::convert::TryFrom;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::thread::JoinHandle;
@@ -47,7 +48,7 @@ fn set_buffer(buffer: &mut [u8], block: Block, value: u8) {
             buffer[x + offset] = value;
         }
     }
-    thread::sleep(Duration::from_millis(100))
+    thread::sleep(Duration::from_millis(100));
 }
 
 fn main() {
@@ -74,6 +75,7 @@ fn main() {
         let blocks: ThreadPtr<Vec<Block>> = ThreadPtr(&blocks);
         unsafe {
             handles.push(thread::spawn(move || {
+                let _ = (&buffer, &blocks);
                 let buffer: &mut [u8] = &mut (*buffer.0);
                 let blocks: &Vec<Block> = &(*blocks.0);
                 loop {
@@ -81,7 +83,7 @@ fn main() {
                     if BLOCKS_CAP <= index {
                         return;
                     }
-                    set_buffer(buffer, blocks[index], index as u8);
+                    set_buffer(buffer, blocks[index], u8::try_from(index).unwrap());
                 }
             }));
         }

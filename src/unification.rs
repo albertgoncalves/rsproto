@@ -54,12 +54,8 @@ fn get_expr(chars: &mut Peekable<Chars<'_>>) -> Expr {
     if let Some(c) = chars.next() {
         match c {
             '(' => return get_func(chars),
-            _ if c.is_alphabetic() && c.is_uppercase() => {
-                return Expr::Atom(Type::Var(c))
-            }
-            _ if c.is_alphabetic() && c.is_lowercase() => {
-                return Expr::Atom(Type::Const(c))
-            }
+            _ if c.is_alphabetic() && c.is_uppercase() => return Expr::Atom(Type::Var(c)),
+            _ if c.is_alphabetic() && c.is_lowercase() => return Expr::Atom(Type::Const(c)),
             _ => (),
         }
     }
@@ -79,9 +75,8 @@ fn set_row(rows: &mut Vec<Row>, vars: &mut Vars, expr: &Expr) -> RowIndex {
                 Type::Var(f) => {
                     if let Some(index) = vars.get(f) {
                         return *index;
-                    } else {
-                        let _: Option<RowIndex> = vars.insert(*f, index);
                     }
+                    let _: Option<RowIndex> = vars.insert(*f, index);
                     *f
                 }
                 Type::Const(f) => *f,
@@ -147,20 +142,13 @@ fn get_term(rows: &[Row], bindings: &Bindings, index: RowIndex) -> String {
     s
 }
 
-fn unify(
-    rows: &[Row],
-    bindings: &mut Bindings,
-    init_x: RowIndex,
-    init_y: RowIndex,
-) -> bool {
+fn unify(rows: &[Row], bindings: &mut Bindings, init_x: RowIndex, init_y: RowIndex) -> bool {
     let mut stack_x: Vec<RowIndex> = vec![init_x];
     let mut stack_y: Vec<RowIndex> = vec![init_y];
 
     macro_rules! const_var {
         ($index:expr, $row_const:expr, $row_var:expr $(,)?) => {{
-            if let Some(bound_index) =
-                bindings.get(&$row_var.index).map(|x| *x)
-            {
+            if let Some(bound_index) = bindings.get(&$row_var.index).map(|x| *x) {
                 let deref_index: RowIndex = deref(bindings, bound_index);
                 match rows[deref_index].type_ {
                     Type::Const(_) => {
@@ -168,13 +156,11 @@ fn unify(
                         stack_y.push(deref_index);
                     }
                     Type::Var(_) => {
-                        let _: Option<RowIndex> =
-                            bindings.insert(deref_index, $index);
+                        let _: Option<RowIndex> = bindings.insert(deref_index, $index);
                     }
                 }
             } else {
-                let _: Option<RowIndex> =
-                    bindings.insert($row_var.index, $row_const.index);
+                let _: Option<RowIndex> = bindings.insert($row_var.index, $row_const.index);
             }
         }};
     }
@@ -197,23 +183,18 @@ fn unify(
             }
             (Type::Const(_), Type::Var(_)) => const_var!(i, row_i, row_j),
             (Type::Var(_), Type::Const(_)) => const_var!(j, row_j, row_i),
-            (Type::Var(_), Type::Var(_)) => {
-                match (bindings.get(&i), bindings.get(&j)) {
-                    (None, None) => {
-                        let _: Option<RowIndex> = bindings.insert(i, j);
-                    }
-                    (None, Some(_)) => {
-                        let _: Option<RowIndex> = bindings.insert(i, j);
-                    }
-                    (Some(_), None) => {
-                        let _: Option<RowIndex> = bindings.insert(j, i);
-                    }
-                    (Some(bound_i), Some(bound_j)) => {
-                        stack_x.push(deref(bindings, *bound_i));
-                        stack_y.push(deref(bindings, *bound_j));
-                    }
+            (Type::Var(_), Type::Var(_)) => match (bindings.get(&i), bindings.get(&j)) {
+                (None, None | Some(_)) => {
+                    let _: Option<RowIndex> = bindings.insert(i, j);
                 }
-            }
+                (Some(_), None) => {
+                    let _: Option<RowIndex> = bindings.insert(j, i);
+                }
+                (Some(bound_i), Some(bound_j)) => {
+                    stack_x.push(deref(bindings, *bound_i));
+                    stack_y.push(deref(bindings, *bound_j));
+                }
+            },
         }
     }
     true
@@ -221,10 +202,7 @@ fn unify(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        get_term, parse, set_row, unify, Bindings, Expr, Row, RowIndex, Type,
-        Vars,
-    };
+    use super::{get_term, parse, set_row, unify, Bindings, Expr, Row, RowIndex, Type, Vars};
     use std::collections::HashMap;
 
     macro_rules! func {
@@ -263,10 +241,7 @@ mod tests {
                     func!('f', vec![atom!(Var, 'X')]),
                     func!(
                         'h',
-                        vec![
-                            atom!(Var, 'Y'),
-                            func!('f', vec![atom!(Const, 'a')])
-                        ],
+                        vec![atom!(Var, 'Y'), func!('f', vec![atom!(Const, 'a')])],
                     ),
                     atom!(Var, 'Y'),
                 ],
@@ -281,19 +256,19 @@ mod tests {
         let init_x: RowIndex = set_row(&mut rows, &mut vars, &parse(x));
         let mut bindings: Bindings = HashMap::new();
         assert!(unify(&rows, &mut bindings, init_x, init_y));
-        for (a, b) in pairs.iter() {
+        for (a, b) in pairs {
             assert_eq!(get_term(&rows, &bindings, *vars.get(a).unwrap()), *b);
         }
     }
 
     #[test]
     fn test_unify_0() {
-        unify_and_assert("(f A)", "(f B)", &vec![('A', "B")]);
+        unify_and_assert("(f A)", "(f B)", &[('A', "B")]);
     }
 
     #[test]
     fn test_unify_1() {
-        unify_and_assert("(f A B)", "(f B A)", &vec![('A', "B"), ('B', "A")]);
+        unify_and_assert("(f A B)", "(f B A)", &[('A', "B"), ('B', "A")]);
     }
 
     #[test]
@@ -301,7 +276,7 @@ mod tests {
         unify_and_assert(
             "(p Z (h Z W) (f W))",
             "(p (f X) (h Y (f a)) Y)",
-            &vec![
+            &[
                 ('W', "(f a)"),
                 ('X', "(f a)"),
                 ('Y', "(f (f a))"),
@@ -315,8 +290,8 @@ mod tests {
         unify_and_assert(
             "(f U (g W X) W b)",
             "(f (g (h a Z) W) U (h a Y) Y)",
-            &vec![('W', "(h a b)"), ('X', "(h a b)"), ('Y', "b"), ('Z', "b")],
-        )
+            &[('W', "(h a b)"), ('X', "(h a b)"), ('Y', "b"), ('Z', "b")],
+        );
     }
 
     #[test]
@@ -324,7 +299,7 @@ mod tests {
         unify_and_assert(
             "(f X (g Y))",
             "(f (g Z) W)",
-            &vec![('X', "(g Z)"), ('W', "(g Y)")],
-        )
+            &[('X', "(g Z)"), ('W', "(g Y)")],
+        );
     }
 }

@@ -1,11 +1,13 @@
+use std::convert::TryInto;
 use std::env;
 use std::fs;
+use std::ops::{Add, Mul};
 use std::path::Path;
 
 /* NOTE: See `https://adventofcode.com/2019/day/5`. */
 
 fn tokenize(source: &str) -> Vec<i32> {
-    source.split(",").map(|x| x.parse().unwrap()).collect()
+    source.split(',').map(|x| x.parse().unwrap()).collect()
 }
 
 fn index(program: &[i32], i: usize, n: usize) -> usize {
@@ -16,7 +18,7 @@ fn index(program: &[i32], i: usize, n: usize) -> usize {
         _ => unreachable!(),
     };
     if mode {
-        program[i + n] as usize
+        program[i + n].try_into().unwrap()
     } else {
         i + n
     }
@@ -33,7 +35,7 @@ macro_rules! bin_op {
 
 macro_rules! jump {
     ($program:expr, $i:expr, $fn:expr $(,)?) => {{
-        if $fn($program[index($program, $i, 1)], 0) {
+        if $fn(&$program[index($program, $i, 1)], &0) {
             $i = $program[index($program, $i, 2)] as usize
         } else {
             $i += 3
@@ -45,7 +47,7 @@ macro_rules! cond {
     ($program:expr, $i:expr, $fn:expr $(,)?) => {{
         let a: i32 = $program[index($program, $i, 1)];
         let b: i32 = $program[index($program, $i, 2)];
-        if $fn(a, b) {
+        if $fn(&a, &b) {
             $program[index($program, $i, 3)] = 1
         } else {
             $program[index($program, $i, 3)] = 0
@@ -60,8 +62,8 @@ fn eval(program: &mut [i32], input: &mut Vec<i32>) -> Option<i32> {
     let mut i: usize = 0;
     while i < n {
         match program[i] % 100 {
-            1 => bin_op!(program, i, |a, b| a + b),
-            2 => bin_op!(program, i, |a, b| a * b),
+            1 => bin_op!(program, i, i32::add),
+            2 => bin_op!(program, i, i32::mul),
             3 => {
                 program[index(program, i, 1)] = input.pop().unwrap();
                 i += 2;
@@ -69,13 +71,13 @@ fn eval(program: &mut [i32], input: &mut Vec<i32>) -> Option<i32> {
             4 => {
                 let value: i32 = program[index(program, i, 1)];
                 output = Some(value);
-                println!("{:?}", value);
+                println!("{value:?}");
                 i += 2;
             }
-            5 => jump!(program, i, |a, b| a != b),
-            6 => jump!(program, i, |a, b| a == b),
-            7 => cond!(program, i, |a, b| a < b),
-            8 => cond!(program, i, |a, b| a == b),
+            5 => jump!(program, i, i32::ne),
+            6 => jump!(program, i, i32::eq),
+            7 => cond!(program, i, i32::lt),
+            8 => cond!(program, i, i32::eq),
             99 => return output,
             _ => panic!(),
         }
@@ -90,9 +92,9 @@ fn main() {
             .join("aoc2019_5.txt"),
     )
     .unwrap();
-    let program: Vec<i32> = tokenize(&source.trim_end());
+    let mut program: Vec<i32> = tokenize(source.trim_end());
     let _: Option<i32> = eval(&mut program.clone(), &mut vec![1]);
-    let _: Option<i32> = eval(&mut program.clone(), &mut vec![5]);
+    let _: Option<i32> = eval(&mut program, &mut vec![5]);
 }
 
 #[cfg(test)]
