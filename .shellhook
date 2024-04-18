@@ -9,6 +9,7 @@ for x in bin out; do
 done
 
 export SHARED_FLAGS=(
+    --color "always"
     -C "opt-level=0"
     -C "overflow-checks=yes"
     -W "absolute-paths-not-starting-with-crate"
@@ -16,44 +17,53 @@ export SHARED_FLAGS=(
     -W "deprecated-in-future"
     -W "elided-lifetimes-in-paths"
     -W "explicit-outlives-requirements"
+    -W "future-incompatible"
     -W "indirect-structural-match"
     -W "keyword-idents"
+    -W "let-underscore"
     -W "macro-use-extern-crate"
     -W "meta-variable-misuse"
-    -W "missing-copy-implementations"
-    -W "missing-debug-implementations"
     -W "non-ascii-idents"
+    -W "nonstandard-style"
+    -W "rust-2018-compatibility"
+    -W "rust-2018-idioms"
+    -W "rust-2021-compatibility"
+    -W "rust-2024-compatibility"
     -W "trivial-casts"
     -W "trivial-numeric-casts"
     -W "unreachable-pub"
-    -W "unused-extern-crates"
-    -W "unused-import-braces"
-    -W "unused-lifetimes"
-    -W "unused-qualifications"
-    -W "unused-results"
+    -W "unused"
 )
 export MAIN_FLAGS=(
-    -C "panic=abort"
+    -C "panic=unwind"
 )
-export RUST_BACKTRACE=0
+export CLIPPY_FLAGS=(
+    -W "clippy::all"
+    -W "clippy::complexity"
+    -W "clippy::correctness"
+    -W "clippy::nursery"
+    -W "clippy::pedantic"
+    -W "clippy::perf"
+    -W "clippy::suspicious"
+    -A "dead_code"
+    -D "warnings"
+)
+export RUST_BACKTRACE=1
 
 runr () {
-    handle=$(echo "$1" | sed 's/^[a-z\/]*\/\(.*\)\.[a-z]*$/\1/')
-    rustfmt "$1" || return
-    rustc -o "$WD/bin/${handle}" "${SHARED_FLAGS[@]}" "${MAIN_FLAGS[@]}" "$1" \
-        || return
-    if [ -z "$2" ]; then
-        "$WD/bin/${handle}"
-    else
-        "$WD/bin/${handle}" "$2"
-    fi
+    handle=$(basename "${1%%.*}")
+    args=("$@")
+    rustfmt --color always "$1" || return
+    clippy-driver "${SHARED_FLAGS[@]}" "${MAIN_FLAGS[@]}" "${CLIPPY_FLAGS[@]}" \
+        -o "$WD/bin/${handle}" "$1" || return
+    "$WD/bin/${handle}" "${args[@]:1}"
 }
 
 testr () {
-    handle=$(echo "$1" | sed 's/^[a-z\/]*\/\(.*\)\.[a-z]*$/\1/')
-    rustfmt "$1" || return
-    rustc -o "$WD/bin/${handle}_test" "${SHARED_FLAGS[@]}" --test "$1" \
-        || return
+    handle=$(basename "${1%%.*}")
+    rustfmt --color always "$1" || return
+    clippy-driver "${SHARED_FLAGS[@]}" "${CLIPPY_FLAGS[@]}" \
+        -o "$WD/bin/${handle}_test" --test "$1" || return
     "$WD/bin/${handle}_test"
 }
 
