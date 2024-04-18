@@ -12,6 +12,7 @@ export SHARED_FLAGS=(
     --color "always"
     -C "opt-level=0"
     -C "overflow-checks=yes"
+    -lglfw
     -W "absolute-paths-not-starting-with-crate"
     -W "anonymous-parameters"
     -W "deprecated-in-future"
