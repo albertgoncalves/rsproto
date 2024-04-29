@@ -1,92 +1,103 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::mem;
 
-type Var<'a> = (&'a str, u32);
+type LabelArgs<'a> = (&'a str, Vec<&'a str>);
 
-type VarRange<'a> = (&'a str, u32, u32);
+#[derive(Clone)]
+enum Value<'a> {
+    Ident(&'a str),
+    Int(i64),
+}
 
 #[derive(Clone)]
 enum Inst<'a> {
     Label(&'a str),
-    PushInt(i64),
-    PushLabel(&'a str, Vec<Var<'a>>),
-    Load(Var<'a>),
-    Store(Var<'a>),
-    Greater,
-    Add,
-    Branch,
-    Jump,
-    Call,
-    Return,
+    Jump(LabelArgs<'a>),
+    Branch(Value<'a>, LabelArgs<'a>, LabelArgs<'a>),
+    Let(&'a str, Value<'a>),
+    Call(Option<&'a str>, &'a str, Vec<Value<'a>>),
+    Return(Option<Value<'a>>),
 }
 
-struct Block<'a> {
-    label: &'a str,
-    args: Vec<Var<'a>>,
-    insts: Vec<Inst<'a>>,
-}
+struct Block<'a>(&'a str, Vec<Inst<'a>>);
 
-fn write_var(f: &mut fmt::Formatter<'_>, var: Var<'_>) -> fmt::Result {
-    write!(f, "{}.{}", var.0, var.1)
-}
-
-fn write_vars(f: &mut fmt::Formatter<'_>, vars: &[Var<'_>]) -> fmt::Result {
-    let mut vars = vars.iter();
-    let var = vars.next().unwrap();
-    write_var(f, *var)?;
-    for var in vars {
-        write!(f, ", ")?;
-        write_var(f, *var)?;
+fn write_value(f: &mut fmt::Formatter<'_>, value: &Value<'_>) -> fmt::Result {
+    match value {
+        Value::Ident(ident) => write!(f, "{ident}"),
+        Value::Int(int) => write!(f, "{int}"),
     }
-    Ok(())
+}
+
+fn write_label_args(f: &mut fmt::Formatter<'_>, label_args: &LabelArgs<'_>) -> fmt::Result {
+    write!(f, "{}", label_args.0)?;
+    if label_args.1.is_empty() {
+        return Ok(());
+    }
+    write!(f, "<{}", label_args.1[0])?;
+    for arg in &label_args.1[1..] {
+        write!(f, ", {arg}")?;
+    }
+    write!(f, ">")
 }
 
 impl fmt::Display for Inst<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "    ")?;
         match self {
-            Self::Label(label) => writeln!(f, "{label}:"),
-            Self::PushInt(int) => writeln!(f, "    push-int {int}"),
-            Self::PushLabel(label, args) => {
-                if args.is_empty() {
-                    writeln!(f, "    push-label {label}")
-                } else {
-                    write!(f, "    push-label {label}(")?;
-                    write_vars(f, args)?;
-                    writeln!(f, ")")
+            Self::Label(label) => {
+                write!(f, "{label}:")
+            }
+            Self::Jump(label_args) => {
+                write!(f, "    jump ")?;
+                write_label_args(f, label_args)
+            }
+            Self::Branch(condition, r#true, r#false) => {
+                write!(f, "    branch ")?;
+                write_value(f, condition)?;
+                write!(f, " ? ")?;
+                write_label_args(f, r#true)?;
+                write!(f, " : ")?;
+                write_label_args(f, r#false)
+            }
+            Self::Let(ident, value) => {
+                write!(f, "    let {ident} = ")?;
+                write_value(f, value)
+            }
+            Self::Call(ident, func, args) => {
+                write!(f, "    ")?;
+                if let Some(ident) = ident {
+                    write!(f, "let {ident} = ")?;
                 }
+                write!(f, "call {func}")?;
+                if args.is_empty() {
+                    return Ok(());
+                }
+                write!(f, "(")?;
+                write_value(f, &args[0])?;
+                for arg in &args[1..] {
+                    write!(f, ", ")?;
+                    write_value(f, arg)?;
+                }
+                write!(f, ")")
             }
-            Self::Load(var) => {
-                write!(f, "    load ")?;
-                write_var(f, *var)?;
-                writeln!(f)
+            Self::Return(value) => {
+                write!(f, "    return")?;
+                let Some(value) = value else {
+                    return Ok(());
+                };
+                write!(f, " ")?;
+                write_value(f, value)
             }
-            Self::Store(var) => {
-                write!(f, "    store ")?;
-                write_var(f, *var)?;
-                writeln!(f)
-            }
-            Self::Greater => writeln!(f, "    >"),
-            Self::Add => writeln!(f, "    +"),
-            Self::Call => writeln!(f, "    call"),
-            Self::Jump => writeln!(f, "    jump"),
-            Self::Branch => writeln!(f, "    branch"),
-            Self::Return => writeln!(f, "    return"),
         }
     }
 }
 
 impl fmt::Display for Block<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.args.is_empty() {
-            writeln!(f, "    {}:", self.label)?;
-        } else {
-            write!(f, "    {}(", self.label)?;
-            write_vars(f, &self.args)?;
-            writeln!(f, "):")?;
-        }
-        for inst in &self.insts {
-            write!(f, "{inst}")?;
+        writeln!(f, "    {}:", self.0)?;
+        for inst in &self.1 {
+            writeln!(f, "{inst}")?;
         }
         Ok(())
     }
@@ -96,29 +107,69 @@ fn get_blocks<'a>(insts: &[Inst<'a>]) -> Vec<Block<'a>> {
     let mut blocks: Vec<Block<'a>> = vec![];
     for (i, inst) in insts.iter().enumerate() {
         if let Inst::Label(label) = inst {
-            if i != 0 && !matches!(insts[i - 1], Inst::Branch | Inst::Jump | Inst::Return) {
+            if i != 0
+                && !matches!(
+                    insts[i - 1],
+                    Inst::Branch(..) | Inst::Jump(..) | Inst::Return(..),
+                )
+            {
                 let j = blocks.len() - 1;
-                blocks[j].insts.push(Inst::PushLabel(label, vec![]));
-                blocks[j].insts.push(Inst::Jump);
+                blocks[j].1.push(Inst::Jump((*label, vec![])));
             }
-            blocks.push(Block {
-                label,
-                args: vec![],
-                insts: vec![],
-            });
+            blocks.push(Block(label, vec![]));
         } else {
-            let j = blocks.len() - 1;
-            blocks[j].insts.push(inst.clone());
+            let i = blocks.len() - 1;
+            blocks[i].1.push(inst.clone());
         }
     }
+
+    for block in &blocks {
+        let n = block.1.len() - 1;
+        for inst in &block.1[..n] {
+            assert!(!matches!(
+                inst,
+                Inst::Label(..) | Inst::Jump(..) | Inst::Branch(..) | Inst::Return(..),
+            ));
+        }
+        assert!(matches!(
+            block.1[n],
+            Inst::Jump(..) | Inst::Branch(..) | Inst::Return(..),
+        ));
+    }
+
     blocks
 }
 
-fn get_partial_label_args<'a>(blocks: &[Block<'a>]) -> HashMap<&'a str, HashSet<&'a str>> {
-    let mut label_args: HashMap<&'a str, HashSet<&'a str>> = HashMap::new();
+fn insert_local<'a>(locals: &mut HashSet<&'a str>, orphans: &HashSet<&'a str>, ident: &'a str) {
+    if orphans.contains(ident) {
+        return;
+    }
+    locals.insert(ident);
+}
+
+fn insert_orphan<'a>(
+    globals: &HashSet<&'a str>,
+    locals: &HashSet<&'a str>,
+    orphans: &mut HashSet<&'a str>,
+    ident: &'a str,
+) {
+    if locals.contains(ident) {
+        return;
+    }
+    if globals.contains(ident) {
+        return;
+    }
+    orphans.insert(ident);
+}
+
+fn get_block_args<'a>(
+    blocks: &[Block<'a>],
+    globals: &HashSet<&'a str>,
+) -> HashMap<&'a str, HashSet<&'a str>> {
+    let mut block_args: HashMap<&'a str, HashSet<&'a str>> = HashMap::new();
 
     for block in blocks {
-        label_args.insert(block.label, HashSet::new());
+        drop(block_args.insert(block.0, HashSet::new()));
     }
 
     let mut repeat = true;
@@ -128,252 +179,235 @@ fn get_partial_label_args<'a>(blocks: &[Block<'a>]) -> HashMap<&'a str, HashSet<
             let mut locals: HashSet<&'a str> = HashSet::new();
             let mut orphans: HashSet<&'a str> = HashSet::new();
 
-            for inst in &block.insts {
+            for inst in &block.1 {
                 match inst {
-                    Inst::Store((var, _)) => {
-                        if orphans.contains(var) {
-                            continue;
+                    Inst::Label(..) => unreachable!(),
+                    Inst::Let(ident, value) => {
+                        if let Value::Ident(value_ident) = value {
+                            insert_orphan(globals, &locals, &mut orphans, value_ident);
                         }
-                        let _ = locals.insert(var);
+                        insert_local(&mut locals, &orphans, ident);
                     }
-                    Inst::Load((var, _)) if !locals.contains(var) => {
-                        let _ = orphans.insert(var);
-                    }
-                    Inst::PushLabel(label, _) => {
-                        let Some(args) = label_args.get(label) else {
-                            continue;
-                        };
+                    Inst::Call(ident, func, args) => {
                         for arg in args {
-                            if locals.contains(arg) {
-                                continue;
+                            if let Value::Ident(arg_ident) = arg {
+                                insert_orphan(globals, &locals, &mut orphans, arg_ident);
                             }
-                            orphans.insert(arg);
+                        }
+                        insert_orphan(globals, &locals, &mut orphans, func);
+                        if let Some(ident) = ident {
+                            insert_local(&mut locals, &orphans, ident);
                         }
                     }
-                    _ => (),
-                }
-            }
-
-            let args: &mut HashSet<&'a str> = label_args.get_mut(block.label).unwrap();
-            for var in orphans {
-                repeat |= args.insert(var);
-            }
-        }
-    }
-
-    label_args
-}
-
-fn increment_k<'a>(blocks: &mut [Block<'a>], label_args: &HashMap<&'a str, HashSet<&'a str>>) {
-    for block in &mut *blocks {
-        for arg in &label_args[block.label] {
-            block.args.push((arg, 0));
-        }
-        block.args.sort_unstable();
-        for inst in &mut block.insts {
-            let Inst::PushLabel(label, vec) = inst else {
-                continue;
-            };
-            assert!(vec.is_empty());
-            let Some(args) = label_args.get(label) else {
-                continue;
-            };
-            for arg in args {
-                vec.push((arg, 0));
-            }
-            vec.sort_unstable();
-        }
-    }
-
-    let mut var_numbers: HashMap<&'a str, u32> = HashMap::new();
-    for block in blocks {
-        for arg in &mut block.args {
-            let k = var_numbers.get(arg.0).map_or(1, |k| k + 1);
-            arg.1 = k;
-            var_numbers.insert(arg.0, k);
-        }
-        for inst in &mut block.insts {
-            match inst {
-                Inst::Load((var, k)) => {
-                    assert!(*k == 0);
-                    *k = *var_numbers.get(var).unwrap();
-                }
-                Inst::Store((var, k0)) => {
-                    assert!(*k0 == 0);
-                    let k1 = var_numbers.get(var).map_or(1, |k1| k1 + 1);
-                    var_numbers.insert(var, k1);
-                    *k0 = k1;
-                }
-                Inst::PushLabel(_, args) => {
-                    for arg in args {
-                        assert!(arg.1 == 0);
-                        arg.1 = var_numbers[arg.0];
+                    Inst::Return(Some(Value::Ident(ident))) => {
+                        insert_orphan(globals, &locals, &mut orphans, ident);
                     }
+                    Inst::Jump(label_args) => {
+                        assert!(label_args.1.is_empty());
+                        if let Some(args) = block_args.get(&label_args.0) {
+                            for arg in args {
+                                insert_orphan(globals, &locals, &mut orphans, arg);
+                            }
+                        }
+                    }
+                    Inst::Branch(condition, r#true, r#false) => {
+                        if let Value::Ident(ident) = condition {
+                            insert_orphan(globals, &locals, &mut orphans, ident);
+                        }
+
+                        assert!(r#true.1.is_empty());
+                        if let Some(args) = block_args.get(&r#true.0) {
+                            for arg in args {
+                                insert_orphan(globals, &locals, &mut orphans, arg);
+                            }
+                        }
+
+                        assert!(r#false.1.is_empty());
+                        if let Some(args) = block_args.get(&r#false.0) {
+                            for arg in args {
+                                insert_orphan(globals, &locals, &mut orphans, arg);
+                            }
+                        }
+                    }
+                    Inst::Return(..) => (),
                 }
-                _ => (),
+            }
+
+            let args: &mut HashSet<&'a str> = block_args.get_mut(&block.0).unwrap();
+            for ident in orphans {
+                repeat |= args.insert(ident);
             }
         }
     }
+
+    block_args
 }
 
-fn get_label_args<'a>(blocks: &[Block<'a>]) -> HashMap<&'a str, Vec<Var<'a>>> {
-    let mut label_args: HashMap<&'a str, Vec<Var<'a>>> = HashMap::new();
+fn get_insts(blocks: Vec<Block<'_>>) -> Vec<Inst<'_>> {
+    let mut insts = vec![];
     for block in blocks {
-        label_args.insert(block.label, block.args.clone());
-    }
-    label_args
-}
-
-fn push_pairs<'a>(pairs: &mut Vec<VarRange<'a>>, args_from: &[Var<'a>], args_to: &[Var<'a>]) {
-    for arg_from in args_from {
-        for arg_to in args_to {
-            if arg_from.0 != arg_to.0 {
-                continue;
-            }
-            assert!(arg_from.1 != arg_to.1);
-            if arg_from.1 < arg_to.1 {
-                pairs.push((arg_from.0, arg_from.1, arg_to.1));
-            } else {
-                pairs.push((arg_from.0, arg_to.1, arg_from.1));
-            }
-            break;
+        insts.push(Inst::Label(block.0));
+        for inst in block.1 {
+            insts.push(inst);
         }
     }
+    insts
 }
 
-fn get_pairs<'a>(
-    blocks: &mut [Block<'a>],
-    label_args: &HashMap<&'a str, Vec<Var<'a>>>,
-) -> Vec<VarRange<'a>> {
-    let mut pairs: Vec<VarRange<'a>> = vec![];
-    for block in blocks {
-        let i = block.insts.len() - 1;
-        match block.insts.get(i) {
-            Some(Inst::Jump) => {
-                let Some(Inst::PushLabel(label, args_from)) = block.insts.get(i - 1) else {
-                    unreachable!()
-                };
-                push_pairs(&mut pairs, args_from, &label_args[label]);
+fn set_block_args<'a>(insts: &mut [Inst<'a>], block_args: &HashMap<&'a str, HashSet<&'a str>>) {
+    for inst in insts {
+        match inst {
+            Inst::Jump(label_args) => {
+                assert!(label_args.1.is_empty());
+                label_args.1.extend(block_args[&label_args.0].iter());
+                label_args.1.sort_unstable();
             }
-            Some(Inst::Branch) => {
-                for j in (i - 2)..i {
-                    let Some(Inst::PushLabel(label, args_from)) = block.insts.get(j) else {
-                        unreachable!()
-                    };
-                    push_pairs(&mut pairs, args_from, &label_args[label]);
-                }
+            Inst::Branch(_, r#true, r#false) => {
+                assert!(r#true.1.is_empty());
+                r#true.1.extend(block_args[&r#true.0].iter());
+                r#true.1.sort_unstable();
+
+                assert!(r#false.1.is_empty());
+                r#false.1.extend(block_args[&r#false.0].iter());
+                r#false.1.sort_unstable();
             }
-            None => unreachable!(),
             _ => (),
         }
     }
-    pairs
 }
 
-fn get_groups<'a>(pairs: &[VarRange<'a>]) -> Vec<VarRange<'a>> {
-    let mut groups: Vec<VarRange<'a>> = vec![];
-    for pair in pairs {
-        assert!(pair.1 <= pair.2);
-        let mut found = false;
-        for group in &mut groups {
-            assert!(group.1 < group.2);
-            if pair.0 != group.0 {
-                continue;
-            }
-            if !((group.1 <= pair.2) && (pair.1 <= group.2)) {
-                continue;
-            }
-            group.1 = std::cmp::min(group.1, pair.1);
-            group.2 = std::cmp::max(group.2, pair.2);
-            found = true;
-            break;
-        }
-        if !found {
-            groups.push(*pair);
-        }
+fn insert_expiration<'a>(
+    globals: &HashSet<&'a str>,
+    expirations: &mut HashMap<&'a str, usize>,
+    ident: &'a str,
+    i: usize,
+) {
+    if globals.contains(ident) {
+        return;
     }
-    groups
+    expirations.insert(ident, i + 1);
 }
 
-fn update_k<'a>(groups: &[VarRange<'a>], arg: &mut Var<'a>) {
-    for group in groups {
-        if arg.0 != group.0 {
-            continue;
-        }
-        let k = arg.1;
-        if !((group.1 <= k) && (k <= group.2)) {
-            continue;
-        }
-        arg.1 = group.1;
-        break;
-    }
-}
+fn get_expirations<'a>(
+    insts: &[Inst<'a>],
+    globals: &HashSet<&'a str>,
+) -> HashMap<usize, Vec<&'a str>> {
+    let mut expirations: HashMap<&'a str, usize> = HashMap::new();
 
-fn shrink_k<'a>(blocks: &mut [Block<'a>], groups: &[VarRange<'a>]) {
-    for block in blocks {
-        for arg in &mut block.args {
-            update_k(groups, arg);
-        }
-        for inst in &mut block.insts {
-            match inst {
-                Inst::Load(arg) | Inst::Store(arg) => {
-                    update_k(groups, arg);
+    for (i, inst) in insts.iter().enumerate() {
+        match inst {
+            Inst::Jump(label_args) => {
+                for arg in &label_args.1 {
+                    insert_expiration(globals, &mut expirations, arg, i);
                 }
-                Inst::PushLabel(_, args) => {
-                    for arg in args {
-                        update_k(groups, arg);
+            }
+            Inst::Branch(condition, r#true, r#false) => {
+                if let Value::Ident(ident) = condition {
+                    insert_expiration(globals, &mut expirations, ident, i);
+                }
+                for arg in &r#true.1 {
+                    insert_expiration(globals, &mut expirations, arg, i);
+                }
+                for arg in &r#false.1 {
+                    insert_expiration(globals, &mut expirations, arg, i);
+                }
+            }
+            Inst::Let(ident, value) => {
+                if let Value::Ident(value_ident) = value {
+                    insert_expiration(globals, &mut expirations, value_ident, i);
+                }
+                insert_expiration(globals, &mut expirations, ident, i);
+            }
+            Inst::Call(ident, func, args) => {
+                for arg in args {
+                    if let Value::Ident(arg_ident) = arg {
+                        insert_expiration(globals, &mut expirations, arg_ident, i);
                     }
                 }
-                _ => (),
+                insert_expiration(globals, &mut expirations, func, i);
+                if let Some(ident) = ident {
+                    insert_expiration(globals, &mut expirations, ident, i);
+                }
             }
+            Inst::Return(Some(Value::Ident(ident))) => {
+                insert_expiration(globals, &mut expirations, ident, i);
+            }
+            Inst::Label(..) | Inst::Return(..) => (),
         }
     }
+
+    let mut inverted = HashMap::new();
+    for (key, value) in expirations {
+        inverted.entry(value).or_insert_with(Vec::new);
+        inverted.get_mut(&value).unwrap().push(key);
+    }
+    inverted
+}
+
+fn get_assignments<'a>(
+    insts: &[Inst<'a>],
+    expirations: &HashMap<usize, Vec<&'a str>>,
+    k: usize,
+) -> HashMap<&'a str, usize> {
+    let mut registers: Vec<usize> = (0..k).collect();
+    let mut assignments: HashMap<&'a str, usize> = HashMap::new();
+    let mut expired: HashSet<&'a str> = HashSet::new();
+    for (i, inst) in insts.iter().enumerate() {
+        if let Some(expiration) = expirations.get(&i) {
+            for ident in expiration {
+                if let Some(register) = assignments.get(ident) {
+                    registers.push(*register);
+                }
+                expired.insert(ident);
+            }
+        }
+        match inst {
+            Inst::Let(ident, _) | Inst::Call(Some(ident), _, _) => {
+                assert!(!expired.contains(ident));
+                if assignments.contains_key(ident) {
+                    continue;
+                }
+                if let Some(register) = registers.pop() {
+                    assignments.insert(ident, register);
+                }
+            }
+            _ => (),
+        }
+    }
+    assignments
 }
 
 fn main() {
-    let insts = [
+    let mut insts = vec![
         Inst::Label("f"),
-        Inst::PushInt(0),
-        Inst::Store(("x", 0)),
-        Inst::PushInt(0),
-        Inst::Store(("y", 0)),
-        Inst::Label("__0__"),
-        Inst::Load(("x", 0)),
-        Inst::PushInt(10),
-        Inst::Greater,
-        Inst::PushLabel("__1__", vec![]),
-        Inst::PushLabel("__2__", vec![]),
-        Inst::Branch,
-        Inst::Label("__2__"),
-        Inst::Load(("x", 0)),
-        Inst::Load(("y", 0)),
-        Inst::Add,
-        Inst::Store(("y", 0)),
-        Inst::Load(("x", 0)),
-        Inst::PushInt(1),
-        Inst::Add,
-        Inst::Store(("x", 0)),
-        Inst::PushLabel("__0__", vec![]),
-        Inst::Jump,
+        Inst::Let("x", Value::Int(0)),
+        Inst::Let("y", Value::Int(0)),
         Inst::Label("__1__"),
-        Inst::Load(("y", 0)),
-        Inst::PushLabel("print", vec![]),
-        Inst::Call,
-        Inst::Return,
+        Inst::Call(Some("__2__"), "<=", vec![Value::Int(10), Value::Ident("x")]),
+        Inst::Branch(Value::Ident("__2__"), ("__4__", vec![]), ("__3__", vec![])),
+        Inst::Label("__3__"),
+        Inst::Call(Some("y"), "+", vec![Value::Ident("x"), Value::Ident("y")]),
+        Inst::Call(Some("x"), "+", vec![Value::Ident("x"), Value::Int(1)]),
+        Inst::Jump(("__1__", vec![])),
+        Inst::Label("__4__"),
+        Inst::Call(None, "print_int", vec![Value::Ident("y")]),
+        Inst::Return(None),
     ];
 
-    let mut blocks = get_blocks(&insts);
+    let globals = HashSet::from(["<=", "+", "print_int"]);
+    let blocks = get_blocks(&insts);
 
-    let partial_label_args = get_partial_label_args(&blocks[..]);
-    increment_k(&mut blocks, &partial_label_args);
+    let block_args = get_block_args(&blocks, &globals);
+    drop(mem::replace(&mut insts, get_insts(blocks)));
+    set_block_args(&mut insts, &block_args);
 
-    let label_args = get_label_args(&blocks[..]);
-    let pairs = get_pairs(&mut blocks, &label_args);
-    let groups = get_groups(&pairs);
-    shrink_k(&mut blocks, &groups);
+    let expirations = get_expirations(&insts, &globals);
+    let assignments = get_assignments(&insts, &expirations, 3);
+    for assignment in assignments {
+        println!("{assignment:?}");
+    }
 
-    println!();
-    for block in blocks {
-        println!("{block}");
+    for inst in &insts {
+        println!("{inst}");
     }
 }
