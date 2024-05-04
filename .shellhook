@@ -47,7 +47,9 @@ export CLIPPY_FLAGS=(
     -W "clippy::pedantic"
     -W "clippy::perf"
     -W "clippy::suspicious"
+    -A "clippy::upper-case-acronyms"
     -A "dead_code"
+    -A "non-snake-case"
     -D "warnings"
 )
 export RUST_BACKTRACE=1

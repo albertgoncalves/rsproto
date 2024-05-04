@@ -1,7 +1,26 @@
-use std::ffi::{c_char, c_float, c_int, c_uint, CStr, CString};
+use std::convert::TryInto;
+use std::ffi::{c_char, c_float, c_int, c_uint, c_void, CStr, CString};
 use std::marker;
 use std::ptr;
+use std::slice::from_raw_parts;
+use std::str::from_utf8_unchecked;
 use std::time;
+
+struct Defer<F: FnMut()>(F);
+
+impl<F: FnMut()> Drop for Defer<F> {
+    fn drop(&mut self) {
+        (self.0)();
+    }
+}
+
+macro_rules! defer {
+    ($expr:expr) => {
+        let _defer = Defer(|| {
+            $expr;
+        });
+    };
+}
 
 macro_rules! opaque_struct {
     ($name:ident) => {
@@ -17,14 +36,26 @@ macro_rules! opaque_struct {
 opaque_struct!(GLFWwindow);
 opaque_struct!(GLFWmonitor);
 
-type GLFWerrorfun = extern "C" fn(error_code: c_int, description: *const c_char);
-type GLFWkeyfun = extern "C" fn(*mut GLFWwindow, c_int, c_int, c_int, c_int);
-
 type GLenum = c_uint;
 type GLbitfield = c_uint;
 type GLint = c_int;
+type GLuint = c_uint;
 type GLsizei = c_int;
 type GLclampf = c_float;
+type GLchar = c_char;
+
+type GLFWerrorfun = extern "C" fn(error_code: c_int, description: *const c_char);
+type GLFWkeyfun = extern "C" fn(*mut GLFWwindow, c_int, c_int, c_int, c_int);
+
+type GLDEBUGPROC = extern "C" fn(
+    source: GLenum,
+    r#type: GLenum,
+    id: GLuint,
+    severity: GLenum,
+    length: GLsizei,
+    message: *const GLchar,
+    userParam: *const c_void,
+);
 
 extern "C" {
     fn glfwGetVersionString() -> *const c_char;
@@ -57,6 +88,17 @@ extern "C" {
 
     fn glGetError() -> GLenum;
 
+    // NOTE: See `https://www.khronos.org/opengl/wiki/OpenGL_Error`.
+    fn glDebugMessageCallback(callback: GLDEBUGPROC, userParam: *const c_void);
+    fn glDebugMessageInsert(
+        source: GLenum,
+        r#type: GLenum,
+        id: GLuint,
+        severity: GLenum,
+        length: GLsizei,
+        buf: *const GLchar,
+    );
+
     fn glViewport(x: GLint, y: GLint, width: GLsizei, height: GLsizei);
 
     fn glEnable(cap: GLenum);
@@ -64,45 +106,40 @@ extern "C" {
 
     fn glClearColor(red: GLclampf, green: GLclampf, blue: GLclampf, alpha: GLclampf);
     fn glClear(mask: GLbitfield);
+
+    fn glGenBuffers(n: GLsizei, buffers: *mut GLuint);
 }
 
-const GLFW_CONTEXT_VERSION_MAJOR: c_int = 0x0002_2002;
-const GLFW_CONTEXT_VERSION_MINOR: c_int = 0x0002_2003;
-const GLFW_OPENGL_PROFILE: c_int = 0x0002_2008;
-const GLFW_OPENGL_CORE_PROFILE: c_int = 0x0003_2001;
 const GLFW_RESIZABLE: c_int = 0x0002_0003;
 const GLFW_SAMPLES: c_int = 0x0002_100D;
+const GLFW_CONTEXT_VERSION_MAJOR: c_int = 0x0002_2002;
+const GLFW_CONTEXT_VERSION_MINOR: c_int = 0x0002_2003;
+const GLFW_OPENGL_DEBUG_CONTEXT: c_int = 0x0002_2007;
+const GLFW_OPENGL_PROFILE: c_int = 0x0002_2008;
+const GLFW_OPENGL_CORE_PROFILE: c_int = 0x0003_2001;
 
 const GLFW_PRESS: c_int = 1;
 const GLFW_KEY_ESCAPE: c_int = 256;
 
-const GL_COLOR_BUFFER_BIT: u32 = 0x0000_4000;
-const GL_DEPTH_BUFFER_BIT: u32 = 0x0000_0100;
-const GL_STENCIL_BUFFER_BIT: u32 = 0x0000_0400;
+const GL_DEBUG_TYPE_ERROR: GLenum = 0x824C;
+const GL_DEBUG_OUTPUT: GLenum = 0x92E0;
+const GL_DEBUG_OUTPUT_SYNCHRONOUS: GLenum = 0x8242;
 
-const GL_BLEND: u32 = 0x0BE2;
-const GL_MULTISAMPLE: u32 = 0x809D;
+const GL_DEPTH_BUFFER_BIT: GLbitfield = 0x0000_0100;
+const GL_STENCIL_BUFFER_BIT: GLbitfield = 0x0000_0400;
+const GL_COLOR_BUFFER_BIT: GLbitfield = 0x0000_4000;
 
-const GL_SRC_ALPHA: u32 = 0x0302;
-const GL_ONE_MINUS_SRC_ALPHA: u32 = 0x0303;
+const GL_BLEND: GLenum = 0x0BE2;
+const GL_MULTISAMPLE: GLenum = 0x809D;
 
-struct Defer<F: FnMut()>(F);
+const GL_SRC_ALPHA: GLenum = 0x0302;
+const GL_ONE_MINUS_SRC_ALPHA: GLenum = 0x0303;
 
-impl<F: FnMut()> Drop for Defer<F> {
-    fn drop(&mut self) {
-        (self.0)();
-    }
-}
+const GL_DEBUG_SOURCE_APPLICATION: GLenum = 0x824A;
+const GL_DEBUG_TYPE_OTHER: GLenum = 0x8251;
+const GL_DEBUG_SEVERITY_NOTIFICATION: GLenum = 0x826B;
 
-macro_rules! defer {
-    ($expr:expr) => {
-        let _defer = Defer(|| {
-            $expr;
-        });
-    };
-}
-
-extern "C" fn callback_error(error_code: c_int, description: *const c_char) {
+extern "C" fn callback_glfw_error(error_code: c_int, description: *const c_char) {
     let mut message = error_code.to_string();
     if !description.is_null() {
         message.push_str(&format!(
@@ -113,7 +150,7 @@ extern "C" fn callback_error(error_code: c_int, description: *const c_char) {
     panic!("{}", message);
 }
 
-extern "C" fn callback_key(
+extern "C" fn callback_glfw_key(
     window: *mut GLFWwindow,
     key: c_int,
     _scancode: c_int,
@@ -124,21 +161,34 @@ extern "C" fn callback_key(
         return;
     }
     if key == GLFW_KEY_ESCAPE {
-        unsafe { glfwSetWindowShouldClose(window, 1) }
+        unsafe {
+            glfwSetWindowShouldClose(window, 1);
+        }
     }
 }
 
-fn panic_if_gl_error() {
-    match unsafe { glGetError() } {
-        0 => (),
-        0x0500 => panic!("GL_INVALID_ENUM"),
-        0x0501 => panic!("GL_INVALID_VALUE"),
-        0x0502 => panic!("GL_INVALID_OPERATION"),
-        0x0503 => panic!("GL_STACK_OVERFLOW"),
-        0x0504 => panic!("GL_STACK_UNDERFLOW"),
-        0x0505 => panic!("GL_OUT_OF_MEMORY"),
-        0x0506 => panic!("GL_INVALID_FRAMEBUFFER_OPERATION"),
-        _ => unreachable!(),
+static mut GL_DEBUG_MESSAGES: Vec<String> = Vec::new();
+
+extern "C" fn callback_gl_debug(
+    _source: GLenum,
+    _type: GLenum,
+    _id: GLuint,
+    severity: GLenum,
+    length: GLsizei,
+    message: *const GLchar,
+    _userParam: *const c_void,
+) {
+    assert!(0 < length);
+    unsafe {
+        let message: &str = from_utf8_unchecked(from_raw_parts(
+            message.cast::<u8>(),
+            length.try_into().unwrap(),
+        ));
+        if severity == GL_DEBUG_SEVERITY_NOTIFICATION {
+            GL_DEBUG_MESSAGES.push(message.to_owned());
+        } else {
+            panic!("{}", message);
+        }
     }
 }
 
@@ -150,8 +200,9 @@ fn main() {
         assert!(glfwInit() == 1);
         defer!(glfwTerminate());
 
-        glfwSetErrorCallback(callback_error);
+        glfwSetErrorCallback(callback_glfw_error);
 
+        glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -177,15 +228,17 @@ fn main() {
 
         glfwMakeContextCurrent(window);
         glfwSwapInterval(1);
-        glfwSetKeyCallback(window, callback_key);
+        glfwSetKeyCallback(window, callback_glfw_key);
+
+        glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+        glDebugMessageCallback(callback_gl_debug, ptr::null::<c_void>());
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glClearColor(0.1, 0.1, 0.1, 1.0);
         glEnable(GL_MULTISAMPLE);
         glViewport(0, 0, width, height);
-
-        panic_if_gl_error();
 
         let mut now = time::Instant::now();
         let mut frames = 0;
@@ -208,6 +261,21 @@ fn main() {
             glfwSwapBuffers(window);
 
             frames += 1;
+        }
+
+        let message: &[u8] = b"Hello, world!";
+        glDebugMessageInsert(
+            GL_DEBUG_SOURCE_APPLICATION,
+            GL_DEBUG_TYPE_OTHER,
+            0,
+            GL_DEBUG_SEVERITY_NOTIFICATION,
+            message.len().try_into().unwrap(),
+            message.as_ptr().cast::<i8>(),
+        );
+
+        #[allow(static_mut_refs)]
+        for message in &GL_DEBUG_MESSAGES {
+            eprintln!("{message}");
         }
     }
 }
