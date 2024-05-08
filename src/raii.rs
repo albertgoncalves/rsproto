@@ -26,4 +26,5 @@ where
 fn main() {
     let my_struct = MyStruct::new(-123);
     println!("{my_struct}");
+    panic!();
 }
