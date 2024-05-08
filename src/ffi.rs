@@ -273,9 +273,9 @@ fn main() {
             message.as_ptr().cast::<i8>(),
         );
 
-        #[allow(static_mut_refs)]
-        for message in &GL_DEBUG_MESSAGES {
-            eprintln!("{message}");
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..GL_DEBUG_MESSAGES.len() {
+            eprintln!("{}", GL_DEBUG_MESSAGES.get_unchecked(i));
         }
     }
 }
