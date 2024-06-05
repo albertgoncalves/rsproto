@@ -45,7 +45,8 @@ type GLclampf = c_float;
 type GLchar = c_char;
 
 type GLFWerrorfun = extern "C" fn(error_code: c_int, description: *const c_char);
-type GLFWkeyfun = extern "C" fn(*mut GLFWwindow, c_int, c_int, c_int, c_int);
+type GLFWkeyfun =
+    extern "C" fn(window: *mut GLFWwindow, key: c_int, scancode: c_int, action: c_int, mods: c_int);
 
 type GLDEBUGPROC = extern "C" fn(
     source: GLenum,
@@ -197,10 +198,10 @@ fn main() {
         let version = CStr::from_ptr(glfwGetVersionString()).to_str().unwrap();
         println!("{version}");
 
+        glfwSetErrorCallback(callback_glfw_error);
+
         assert!(glfwInit() == 1);
         defer!(glfwTerminate());
-
-        glfwSetErrorCallback(callback_glfw_error);
 
         glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
