@@ -2,6 +2,7 @@
 // NOTE: See `https://prng.di.unimi.it/`.
 // NOTE: See `https://github.com/lemire/testingRNG`.
 // NOTE: See `https://stats.stackexchange.com/questions/337927/is-pcg-random-number-generator-as-good-as-claimed`.
+// NOTE: See `https://www.pcg-random.org/posts/bounded-rands.html`.
 
 struct PcgRng {
     state: u64,
