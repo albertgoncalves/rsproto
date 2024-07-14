@@ -8,8 +8,8 @@ struct PcgRng {
     increment: u64,
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::unreadable_literal)]
 impl PcgRng {
+    #[allow(clippy::unreadable_literal)]
     const fn new() -> Self {
         Self {
             state: 9600629759793949339,
@@ -20,12 +20,20 @@ impl PcgRng {
     fn seed(&mut self, state: u64, increment: u64) {
         self.state = 0;
         self.increment = increment.wrapping_shl(1) | 1;
-        self.random_uniform_u32();
+        Random::<u32>::uniform(self);
         self.state += state;
-        self.random_uniform_u32();
+        Random::<u32>::uniform(self);
     }
+}
 
-    fn random_uniform_u32(&mut self) -> u32 {
+trait Random<T> {
+    fn uniform(&mut self) -> T;
+    fn uniform_bounded(&mut self, bound: T) -> T;
+}
+
+impl Random<u32> for PcgRng {
+    #[allow(clippy::cast_possible_truncation, clippy::unreadable_literal)]
+    fn uniform(&mut self) -> u32 {
         let state = self.state;
         self.state = state
             .wrapping_mul(6364136223846793005)
@@ -34,10 +42,10 @@ impl PcgRng {
             .rotate_right(state.wrapping_shr(59) as u32)
     }
 
-    fn random_bounded_u32(&mut self, bound: u32) -> u32 {
+    fn uniform_bounded(&mut self, bound: u32) -> u32 {
         let threshold: u32 = bound.wrapping_neg() % bound;
         loop {
-            let x = self.random_uniform_u32();
+            let x = self.uniform();
             if threshold <= x {
                 return x % bound;
             }
@@ -47,6 +55,7 @@ impl PcgRng {
 
 fn main() {
     let mut rng = PcgRng::new();
-    println!("{}", rng.random_uniform_u32());
-    println!("{}", rng.random_uniform_u32());
+    println!("{}", rng.uniform());
+    println!("{}", rng.uniform());
+    println!("{}", rng.uniform_bounded(123));
 }
