@@ -35,6 +35,7 @@ macro_rules! bin_op {
 
 macro_rules! jump {
     ($program:expr, $i:expr, $fn:expr $(,)?) => {{
+        #[allow(clippy::cast_sign_loss)]
         if $fn(&$program[index($program, $i, 1)], &0) {
             $i = $program[index($program, $i, 2)] as usize
         } else {
