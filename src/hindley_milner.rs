@@ -19,7 +19,7 @@ enum Type<'a> {
     Op(&'a str, Vec<Type<'a>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Error {
     Undefined,
     Infinite,
@@ -202,36 +202,46 @@ impl<'a> Context<'a> {
             Term::Ident(ident) => self.ident_to_type(ident),
             Term::Apply(func_arg) => {
                 let (func, arg) = func_arg.as_ref();
+
                 let func_type = self.term_to_type(func)?;
                 let arg_type = self.term_to_type(arg)?;
                 let ret_type = self.state.next_var().1;
+
                 self.unify(Type::Op("fn", vec![arg_type, ret_type.clone()]), func_type)?;
+
                 Ok(self.state.prune(ret_type))
             }
             Term::Lambda(arg, term) => {
                 let (arg_k, arg_type) = self.state.next_var();
                 self.non_generics.insert(arg_k);
                 self.env.push((arg, arg_type.clone()));
+
                 let term_type = self.term_to_type(term)?;
                 let func_type = Type::Op("fn", vec![arg_type, term_type]);
+
                 assert!(*arg == self.env.pop().unwrap().0);
                 assert!(self.non_generics.remove(&arg_k));
+
                 Ok(self.state.prune(func_type))
             }
             Term::Let(ident, value_body) => {
                 let (value, body) = value_body.as_ref();
+
                 let value_type = self.term_to_type(value)?;
                 self.env.push((ident, value_type));
                 let body_type = self.term_to_type(body)?;
+
                 assert!(*ident == self.env.pop().unwrap().0);
+
                 Ok(self.state.prune(body_type))
             }
             Term::LetRecs(bindings, body) => {
-                let mut ks = Vec::with_capacity(bindings.len());
+                let mut k_removes = Vec::with_capacity(bindings.len());
                 let mut values = Vec::with_capacity(bindings.len());
+
                 for (ident, value) in bindings {
                     let (k, r#type) = self.state.next_var();
-                    ks.push(k);
+                    k_removes.push(k);
                     self.non_generics.insert(k);
                     self.env.push((ident, r#type.clone()));
                     values.push((value, r#type));
@@ -240,13 +250,16 @@ impl<'a> Context<'a> {
                     let value_type = self.term_to_type(value)?;
                     self.unify(value_type, r#type)?;
                 }
-                for k in ks {
+                for k in k_removes {
                     assert!(self.non_generics.remove(&k));
                 }
+
                 let body_type = self.term_to_type(body)?;
+
                 for (ident, _) in bindings.iter().rev() {
                     assert!(*ident == self.env.pop().unwrap().0);
                 }
+
                 Ok(self.state.prune(body_type))
             }
         }
@@ -255,18 +268,15 @@ impl<'a> Context<'a> {
 
 fn main() {
     let mut context = Context::default();
-    let var0 = context.state.next_var().1;
-    let var1 = context.state.next_var().1;
+    let a = context.state.next_var().1;
+    let b = context.state.next_var().1;
     context.env.push((
         "pair",
         Type::Op(
             "fn",
             vec![
-                var0.clone(),
-                Type::Op(
-                    "fn",
-                    vec![var1.clone(), Type::Op("tuple", vec![var0, var1])],
-                ),
+                a.clone(),
+                Type::Op("fn", vec![b.clone(), Type::Op("tuple", vec![a, b])]),
             ],
         ),
     ));
@@ -285,4 +295,237 @@ fn main() {
     );
     let r#type = context.term_to_type(&term).unwrap();
     println!("{term} : {type}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn term_to_type_ok_0() {
+        let mut context = Context::default();
+
+        let a = context.state.next_var().1;
+        let b = context.state.next_var().1;
+        context.env.push((
+            "pair",
+            Type::Op(
+                "fn",
+                vec![
+                    a.clone(),
+                    Type::Op("fn", vec![b.clone(), Type::Op("tuple", vec![a, b])]),
+                ],
+            ),
+        ));
+
+        let term = Term::Let(
+            "f",
+            Box::new((
+                Term::Lambda("x", Box::new(Term::Ident("x"))),
+                Term::Apply(Box::new((
+                    Term::Apply(Box::new((
+                        Term::Ident("pair"),
+                        Term::Apply(Box::new((Term::Ident("f"), Term::Int(-123)))),
+                    ))),
+                    Term::Apply(Box::new((Term::Ident("f"), Term::Bool(true)))),
+                ))),
+            )),
+        );
+        let expected = Ok(Type::Op(
+            "tuple",
+            vec![Type::Op("int", vec![]), Type::Op("bool", vec![])],
+        ));
+
+        assert!(context.term_to_type(&term) == expected);
+    }
+
+    #[test]
+    fn term_to_type_ok_1() {
+        let mut context = Context::default();
+
+        let term = Term::Let(
+            "g",
+            Box::new((
+                Term::Lambda("f", Box::new(Term::Int(-1))),
+                Term::Apply(Box::new((Term::Ident("g"), Term::Ident("g")))),
+            )),
+        );
+
+        assert!(context.term_to_type(&term) == Ok(Type::Op("int", vec![])));
+    }
+
+    #[test]
+    fn term_to_type_ok_2() {
+        let mut context = Context::default();
+
+        let term = Term::Lambda(
+            "f",
+            Box::new(Term::Lambda(
+                "g",
+                Box::new(Term::Lambda(
+                    "x",
+                    Box::new(Term::Apply(Box::new((
+                        Term::Ident("g"),
+                        Term::Apply(Box::new((Term::Ident("f"), Term::Ident("x")))),
+                    )))),
+                )),
+            )),
+        );
+        let expected = Ok(Type::Op(
+            "fn",
+            vec![
+                Type::Op("fn", vec![Type::Var(2), Type::Var(3)]),
+                Type::Op(
+                    "fn",
+                    vec![
+                        Type::Op("fn", vec![Type::Var(3), Type::Var(4)]),
+                        Type::Op("fn", vec![Type::Var(2), Type::Var(4)]),
+                    ],
+                ),
+            ],
+        ));
+
+        assert!(context.term_to_type(&term) == expected);
+    }
+
+    #[test]
+    fn term_to_type_ok_3() {
+        let mut context = Context::default();
+        let a = context.state.next_var().1;
+        let b = context.state.next_var().1;
+        context.env.push((
+            "pair",
+            Type::Op(
+                "fn",
+                vec![
+                    a.clone(),
+                    Type::Op("fn", vec![b.clone(), Type::Op("tuple", vec![a, b])]),
+                ],
+            ),
+        ));
+
+        let term = Term::LetRecs(
+            vec![
+                (
+                    "f",
+                    Term::Lambda(
+                        "x",
+                        Box::new(Term::Apply(Box::new((Term::Ident("g"), Term::Ident("x"))))),
+                    ),
+                ),
+                (
+                    "g",
+                    Term::Lambda(
+                        "x",
+                        Box::new(Term::Apply(Box::new((Term::Ident("f"), Term::Ident("x"))))),
+                    ),
+                ),
+            ],
+            Box::new(Term::Apply(Box::new((
+                Term::Apply(Box::new((
+                    Term::Ident("pair"),
+                    Term::Apply(Box::new((Term::Ident("g"), Term::Bool(true)))),
+                ))),
+                Term::Apply(Box::new((Term::Ident("f"), Term::Int(-1)))),
+            )))),
+        );
+        let expected = Ok(Type::Op("tuple", vec![Type::Var(8), Type::Var(9)]));
+
+        assert!(context.term_to_type(&term) == expected);
+    }
+
+    #[test]
+    fn term_to_type_ok_4() {
+        let mut context = Context::default();
+        let a = context.state.next_var().1;
+        let b = context.state.next_var().1;
+        context.env.push((
+            "pair",
+            Type::Op(
+                "fn",
+                vec![
+                    a.clone(),
+                    Type::Op("fn", vec![b.clone(), Type::Op("tuple", vec![a, b])]),
+                ],
+            ),
+        ));
+
+        let term = Term::Lambda(
+            "g",
+            Box::new(Term::Let(
+                "f",
+                Box::new((
+                    Term::Lambda("x", Box::new(Term::Ident("g"))),
+                    Term::Apply(Box::new((
+                        Term::Apply(Box::new((
+                            Term::Ident("pair"),
+                            Term::Apply(Box::new((Term::Ident("f"), Term::Int(-1)))),
+                        ))),
+                        Term::Apply(Box::new((Term::Ident("f"), Term::Bool(false)))),
+                    ))),
+                )),
+            )),
+        );
+        let expected = Ok(Type::Op(
+            "fn",
+            vec![
+                Type::Var(5),
+                Type::Op("tuple", vec![Type::Var(5), Type::Var(5)]),
+            ],
+        ));
+
+        assert!(context.term_to_type(&term) == expected);
+    }
+
+    #[test]
+    fn term_to_type_err_undefined() {
+        let mut context = Context::default();
+
+        assert!(context.term_to_type(&Term::Ident("x")) == Err(Error::Undefined));
+    }
+
+    #[test]
+    fn term_to_type_err_infnite() {
+        let mut context = Context::default();
+
+        let term = Term::Lambda(
+            "f",
+            Box::new(Term::Apply(Box::new((Term::Ident("f"), Term::Ident("f"))))),
+        );
+
+        assert!(context.term_to_type(&term) == Err(Error::Infinite));
+    }
+
+    #[test]
+    fn term_to_type_err_op() {
+        let mut context = Context::default();
+        context.env.push((
+            "f",
+            Type::Op("fn", vec![Type::Op("int", vec![]), Type::Op("int", vec![])]),
+        ));
+
+        let term = Term::Apply(Box::new((Term::Ident("f"), Term::Bool(true))));
+
+        assert!(context.term_to_type(&term) == Err(Error::Op));
+    }
+
+    #[test]
+    fn term_to_type_err_arity() {
+        let mut context = Context::default();
+        context.env.push((
+            "f",
+            Type::Op(
+                "fn",
+                vec![
+                    Type::Op("int", vec![]),
+                    Type::Op("int", vec![]),
+                    Type::Op("int", vec![]),
+                ],
+            ),
+        ));
+
+        let term = Term::Apply(Box::new((Term::Ident("f"), Term::Int(-1))));
+
+        assert!(context.term_to_type(&term) == Err(Error::Arity));
+    }
 }
