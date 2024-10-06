@@ -331,6 +331,7 @@ mod tests {
                 ))),
             )),
         );
+
         let expected = Ok(Type::Op(
             "tuple",
             vec![Type::Op("int", vec![]), Type::Op("bool", vec![])],
@@ -371,6 +372,7 @@ mod tests {
                 )),
             )),
         );
+
         let expected = Ok(Type::Op(
             "fn",
             vec![
@@ -429,6 +431,7 @@ mod tests {
                 Term::Apply(Box::new((Term::Ident("f"), Term::Int(-1)))),
             )))),
         );
+
         let expected = Ok(Type::Op("tuple", vec![Type::Var(8), Type::Var(9)]));
 
         assert!(context.term_to_type(&term) == expected);
@@ -436,6 +439,65 @@ mod tests {
 
     #[test]
     fn term_to_type_ok_4() {
+        let mut context = Context::default();
+        let a = context.state.next_var().1;
+        let b = context.state.next_var().1;
+        context.env.push((
+            "pair",
+            Type::Op(
+                "fn",
+                vec![
+                    a.clone(),
+                    Type::Op("fn", vec![b.clone(), Type::Op("tuple", vec![a, b])]),
+                ],
+            ),
+        ));
+
+        let term = Term::LetRecs(
+            vec![
+                (
+                    "f",
+                    Term::Lambda(
+                        "x",
+                        Box::new(Term::Apply(Box::new((Term::Ident("g"), Term::Ident("x"))))),
+                    ),
+                ),
+                (
+                    "g",
+                    Term::Lambda(
+                        "x",
+                        Box::new(Term::Apply(Box::new((Term::Ident("f"), Term::Ident("x"))))),
+                    ),
+                ),
+            ],
+            Box::new(Term::Let(
+                "x",
+                Box::new((
+                    Term::Lambda(
+                        "y",
+                        Box::new(Term::Apply(Box::new((Term::Ident("f"), Term::Int(0))))),
+                    ),
+                    Term::Apply(Box::new((
+                        Term::Apply(Box::new((Term::Ident("pair"), Term::Ident("g")))),
+                        Term::Ident("x"),
+                    ))),
+                )),
+            )),
+        );
+
+        let expected = Ok(Type::Op(
+            "tuple",
+            vec![
+                Type::Op("fn", vec![Type::Var(14), Type::Var(15)]),
+                Type::Op("fn", vec![Type::Var(17), Type::Var(18)]),
+            ],
+        ));
+
+        assert!(context.term_to_type(&term) == expected);
+    }
+
+    #[test]
+    fn term_to_type_ok_5() {
         let mut context = Context::default();
         let a = context.state.next_var().1;
         let b = context.state.next_var().1;
@@ -466,6 +528,7 @@ mod tests {
                 )),
             )),
         );
+
         let expected = Ok(Type::Op(
             "fn",
             vec![
