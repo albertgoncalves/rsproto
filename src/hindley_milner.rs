@@ -295,12 +295,15 @@ fn main() {
         )),
     );
 
+    println!("{term}");
+
     let r#type = context.term_to_type(&term).unwrap();
-    println!("{term} : {type}");
+    println!(" :: {type}\n");
 
     for (k, r#type) in &context.state.links {
-        println!("{k:>3}: {type}");
+        println!("{k:>4}: {type}");
     }
+    println!();
 }
 
 #[cfg(test)]
