@@ -280,6 +280,7 @@ fn main() {
             ],
         ),
     ));
+
     let term = Term::Let(
         "f",
         Box::new((
@@ -293,8 +294,13 @@ fn main() {
             ))),
         )),
     );
+
     let r#type = context.term_to_type(&term).unwrap();
     println!("{term} : {type}");
+
+    for (k, r#type) in &context.state.links {
+        println!("{k:>3}: {type}");
+    }
 }
 
 #[cfg(test)]
