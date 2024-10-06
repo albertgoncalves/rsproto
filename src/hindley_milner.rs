@@ -21,10 +21,10 @@ enum Type<'a> {
 
 #[derive(Debug, PartialEq)]
 enum Error {
-    Undefined,
+    Arity,
     Infinite,
     Op,
-    Arity,
+    Undefined,
 }
 
 impl fmt::Display for Term<'_> {
