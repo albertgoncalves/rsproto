@@ -7,6 +7,7 @@ enum Term<'a> {
     Int(i64),
     Bool(bool),
     Ident(&'a str),
+    Access(Box<Term<'a>>, &'a str),
     Lambda(&'a str, Box<Term<'a>>),
     Apply(Box<(Term<'a>, Term<'a>)>),
     Let(&'a str, Box<(Term<'a>, Term<'a>)>),
@@ -17,12 +18,14 @@ enum Term<'a> {
 enum Type<'a> {
     Var(u32),
     Op(&'a str, Vec<Type<'a>>),
+    Dict(HashMap<&'a str, Type<'a>>, Option<u32>),
 }
 
 #[derive(Debug, PartialEq)]
 enum Error {
     Arity,
     Infinite,
+    Key,
     Op,
     Undefined,
 }
@@ -33,6 +36,7 @@ impl fmt::Display for Term<'_> {
             Self::Int(int) => write!(f, "{int}"),
             Self::Bool(r#bool) => write!(f, "{bool}"),
             Self::Ident(ident) => write!(f, "{ident}"),
+            Self::Access(term, ident) => write!(f, "{term}.{ident}"),
             Self::Lambda(arg, term) => write!(f, "\\{arg} -> {term}"),
             Self::Apply(func_arg) => {
                 let (func, arg) = func_arg.as_ref();
@@ -68,6 +72,15 @@ impl fmt::Display for Type<'_> {
                 write!(f, "({}, {})", types[0], types[1])
             }
             Self::Op(..) => todo!(),
+            Self::Dict(dict, _) if dict.is_empty() => write!(f, "{{}}"),
+            Self::Dict(dict, _) => {
+                let rows: Vec<_> = dict.iter().collect();
+                write!(f, "{{{}: {}", rows[0].0, rows[0].1)?;
+                for (ident, r#type) in &rows[1..] {
+                    write!(f, ", {ident}: {type}")?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -93,19 +106,40 @@ impl<'a> State<'a> {
         (k, Type::Var(k))
     }
 
-    fn prune(&mut self, r#type: Type<'a>) -> Type<'a> {
-        match r#type {
+    fn prune(&mut self, old_type: Type<'a>) -> Type<'a> {
+        match old_type {
             Type::Var(k) => {
-                let Some(r#type) = self.links.remove(&k) else {
-                    return r#type;
+                let Some(new_type) = self.links.remove(&k) else {
+                    return old_type;
                 };
-                let r#type = self.prune(r#type);
-                self.links.insert(k, r#type.clone());
-                r#type
+                let new_type = self.prune(new_type.clone());
+                self.links.insert(k, new_type.clone());
+                new_type
             }
-            Type::Op(op, types) => Type::Op(
+            Type::Op(op, old_types) => Type::Op(
                 op,
-                types.into_iter().map(|r#type| self.prune(r#type)).collect(),
+                old_types
+                    .into_iter()
+                    .map(|old_type| self.prune(old_type))
+                    .collect(),
+            ),
+            Type::Dict(old_dict, Some(k)) => {
+                let mut new_dict = match self.prune(Type::Var(k)) {
+                    Type::Dict(new_dict, _) => new_dict,
+                    Type::Var(..) => HashMap::new(),
+                    Type::Op(..) => unreachable!(),
+                };
+                for (ident, old_type) in old_dict {
+                    assert!(new_dict.insert(ident, self.prune(old_type)).is_none());
+                }
+                Type::Dict(new_dict, Some(k))
+            }
+            Type::Dict(old_dict, None) => Type::Dict(
+                old_dict
+                    .into_iter()
+                    .map(|(ident, old_type)| (ident, self.prune(old_type)))
+                    .collect(),
+                None,
             ),
         }
     }
@@ -116,6 +150,19 @@ impl<'a> State<'a> {
             Type::Var(..) => false,
             Type::Op(_, types) => {
                 for r#type in types {
+                    if self.occurs(r#type, other) {
+                        return true;
+                    }
+                }
+                false
+            }
+            Type::Dict(dict, k) => {
+                if let Some(k) = k {
+                    if self.occurs(Type::Var(k), other) {
+                        return true;
+                    }
+                }
+                for (_, r#type) in dict {
                     if self.occurs(r#type, other) {
                         return true;
                     }
@@ -157,6 +204,12 @@ impl<'a> Context<'a> {
                     .map(|old_type| self.fresh(old_type))
                     .collect(),
             ),
+            Type::Dict(dict, k) => Type::Dict(
+                dict.into_iter()
+                    .map(|(ident, old_type)| (ident, self.fresh(old_type)))
+                    .collect(),
+                k,
+            ),
         }
     }
 
@@ -180,6 +233,7 @@ impl<'a> Context<'a> {
                 self.state.links.insert(k, right_type);
                 Ok(())
             }
+            (Type::Op(..), Type::Dict(..)) | (Type::Dict(..), Type::Op(..)) => Err(Error::Op),
             (Type::Op(left_op, _), Type::Op(right_op, _)) if left_op != right_op => Err(Error::Op),
             (Type::Op(_, left_types), Type::Op(_, right_types))
                 if left_types.len() != right_types.len() =>
@@ -192,6 +246,41 @@ impl<'a> Context<'a> {
                 }
                 Ok(())
             }
+            (Type::Dict(mut left_dict, left_k), Type::Dict(mut right_dict, right_k)) => {
+                let left_keys: HashSet<&'a str> = left_dict.keys().copied().collect();
+                let right_keys: HashSet<&'a str> = right_dict.keys().copied().collect();
+                for key in left_keys.union(&right_keys) {
+                    let left_type = left_dict.remove(key);
+                    let right_type = right_dict.remove(key);
+                    match (left_type, right_type) {
+                        (Some(left_type), None) => {
+                            let Some(right_k) = right_k else {
+                                return Err(Error::Key);
+                            };
+                            let k = self.state.next_var().0;
+                            self.unify(
+                                Type::Var(right_k),
+                                Type::Dict([(*key, left_type)].into(), Some(k)),
+                            )?;
+                        }
+                        (None, Some(right_type)) => {
+                            let Some(left_k) = left_k else {
+                                return Err(Error::Key);
+                            };
+                            let k = self.state.next_var().0;
+                            self.unify(
+                                Type::Var(left_k),
+                                Type::Dict([(*key, right_type)].into(), Some(k)),
+                            )?;
+                        }
+                        (Some(left_type), Some(right_type)) => {
+                            self.unify(left_type, right_type)?;
+                        }
+                        (None, None) => unreachable!(),
+                    }
+                }
+                Ok(())
+            }
         }
     }
 
@@ -200,6 +289,18 @@ impl<'a> Context<'a> {
             Term::Int(_) => Ok(Type::Op("int", vec![])),
             Term::Bool(_) => Ok(Type::Op("bool", vec![])),
             Term::Ident(ident) => self.ident_to_type(ident),
+            Term::Access(term, ident) => {
+                let term_type = self.term_to_type(term)?;
+                let ident_type = self.state.next_var().1;
+                let k = self.state.next_var().0;
+
+                self.unify(
+                    term_type,
+                    Type::Dict([(*ident, ident_type.clone())].into(), Some(k)),
+                )?;
+
+                Ok(ident_type)
+            }
             Term::Apply(func_arg) => {
                 let (func, arg) = func_arg.as_ref();
 
@@ -281,21 +382,18 @@ fn main() {
         ),
     ));
 
-    let term = Term::Let(
-        "f",
-        Box::new((
-            Term::Lambda("x", Box::new(Term::Ident("x"))),
+    let term = Term::Lambda(
+        "x",
+        Box::new(Term::Apply(Box::new((
             Term::Apply(Box::new((
-                Term::Apply(Box::new((
-                    Term::Ident("pair"),
-                    Term::Apply(Box::new((Term::Ident("f"), Term::Int(-123)))),
-                ))),
-                Term::Apply(Box::new((Term::Ident("f"), Term::Bool(true)))),
+                Term::Ident("pair"),
+                Term::Access(Box::new(Term::Ident("x")), "y"),
             ))),
-        )),
+            Term::Access(Box::new(Term::Ident("x")), "z"),
+        )))),
     );
 
-    println!("{term}");
+    print!("{term}");
 
     let r#type = context.term_to_type(&term).unwrap();
     println!(" :: {type}\n");
@@ -550,6 +648,44 @@ mod tests {
     }
 
     #[test]
+    fn term_to_type_ok_6() {
+        let mut context = Context::default();
+        let a = context.state.next_var().1;
+        let b = context.state.next_var().1;
+        context.env.push((
+            "pair",
+            Type::Op(
+                "fn",
+                vec![
+                    a.clone(),
+                    Type::Op("fn", vec![b.clone(), Type::Op("tuple", vec![a, b])]),
+                ],
+            ),
+        ));
+
+        let term = Term::Lambda(
+            "x",
+            Box::new(Term::Apply(Box::new((
+                Term::Apply(Box::new((
+                    Term::Ident("pair"),
+                    Term::Access(Box::new(Term::Ident("x")), "y"),
+                ))),
+                Term::Access(Box::new(Term::Ident("x")), "z"),
+            )))),
+        );
+
+        let expected = Ok(Type::Op(
+            "fn",
+            vec![
+                Type::Dict([("y", Type::Var(3)), ("z", Type::Var(4))].into(), Some(6)),
+                Type::Op("tuple", vec![Type::Var(3), Type::Var(4)]),
+            ],
+        ));
+
+        assert!(context.term_to_type(&term) == expected);
+    }
+
+    #[test]
     fn term_to_type_err_undefined() {
         let mut context = Context::default();
 
@@ -599,5 +735,18 @@ mod tests {
         let term = Term::Apply(Box::new((Term::Ident("f"), Term::Int(-1))));
 
         assert!(context.term_to_type(&term) == Err(Error::Arity));
+    }
+
+    #[test]
+    fn term_to_type_err_key() {
+        let mut context = Context::default();
+        context.env.push((
+            "x",
+            Type::Dict([("y", Type::Op("int", vec![]))].into(), None),
+        ));
+
+        let term = Term::Access(Box::new(Term::Ident("x")), "z");
+
+        assert!(context.term_to_type(&term) == Err(Error::Key));
     }
 }
