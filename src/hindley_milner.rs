@@ -26,7 +26,7 @@ enum Error {
     Arity,
     Infinite,
     Key,
-    Op,
+    Mismatch,
     Undefined,
 }
 
@@ -233,8 +233,10 @@ impl<'a> Context<'a> {
                 self.state.links.insert(k, right_type);
                 Ok(())
             }
-            (Type::Op(..), Type::Dict(..)) | (Type::Dict(..), Type::Op(..)) => Err(Error::Op),
-            (Type::Op(left_op, _), Type::Op(right_op, _)) if left_op != right_op => Err(Error::Op),
+            (Type::Op(..), Type::Dict(..)) | (Type::Dict(..), Type::Op(..)) => Err(Error::Mismatch),
+            (Type::Op(left_op, _), Type::Op(right_op, _)) if left_op != right_op => {
+                Err(Error::Mismatch)
+            }
             (Type::Op(_, left_types), Type::Op(_, right_types))
                 if left_types.len() != right_types.len() =>
             {
@@ -286,8 +288,8 @@ impl<'a> Context<'a> {
 
     fn term_to_type(&mut self, term: &Term<'a>) -> Result<Type<'a>, Error> {
         match term {
-            Term::Int(_) => Ok(Type::Op("int", vec![])),
-            Term::Bool(_) => Ok(Type::Op("bool", vec![])),
+            Term::Int(..) => Ok(Type::Op("int", vec![])),
+            Term::Bool(..) => Ok(Type::Op("bool", vec![])),
             Term::Ident(ident) => self.ident_to_type(ident),
             Term::Access(term, ident) => {
                 let term_type = self.term_to_type(term)?;
@@ -714,7 +716,7 @@ mod tests {
 
         let term = Term::Apply(Box::new((Term::Ident("f"), Term::Bool(true))));
 
-        assert!(context.term_to_type(&term) == Err(Error::Op));
+        assert!(context.term_to_type(&term) == Err(Error::Mismatch));
     }
 
     #[test]
