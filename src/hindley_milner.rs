@@ -221,6 +221,11 @@ impl<'a> Context<'a> {
         Ok(self.fresh(self.env[i].1.clone()))
     }
 
+    fn type_to_dict(&mut self, key: &'a str, r#type: Type<'a>) -> Type<'a> {
+        let k = self.state.next_var().0;
+        Type::Dict([(key, r#type)].into(), Some(k))
+    }
+
     fn unify(&mut self, left_type: Type<'a>, right_type: Type<'a>) -> Result<(), Error> {
         let left_type = self.state.prune(left_type);
         let right_type = self.state.prune(right_type);
@@ -259,21 +264,15 @@ impl<'a> Context<'a> {
                             let Some(right_k) = right_k else {
                                 return Err(Error::Key);
                             };
-                            let k = self.state.next_var().0;
-                            self.unify(
-                                Type::Var(right_k),
-                                Type::Dict([(*key, left_type)].into(), Some(k)),
-                            )?;
+                            let dict = self.type_to_dict(key, left_type);
+                            self.unify(Type::Var(right_k), dict)?;
                         }
                         (None, Some(right_type)) => {
                             let Some(left_k) = left_k else {
                                 return Err(Error::Key);
                             };
-                            let k = self.state.next_var().0;
-                            self.unify(
-                                Type::Var(left_k),
-                                Type::Dict([(*key, right_type)].into(), Some(k)),
-                            )?;
+                            let dict = self.type_to_dict(key, right_type);
+                            self.unify(Type::Var(left_k), dict)?;
                         }
                         (Some(left_type), Some(right_type)) => {
                             self.unify(left_type, right_type)?;
@@ -294,12 +293,9 @@ impl<'a> Context<'a> {
             Term::Access(term, ident) => {
                 let term_type = self.term_to_type(term)?;
                 let ident_type = self.state.next_var().1;
-                let k = self.state.next_var().0;
 
-                self.unify(
-                    term_type,
-                    Type::Dict([(*ident, ident_type.clone())].into(), Some(k)),
-                )?;
+                let dict = self.type_to_dict(ident, ident_type.clone());
+                self.unify(term_type, dict)?;
 
                 Ok(ident_type)
             }
