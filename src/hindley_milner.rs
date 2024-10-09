@@ -8,8 +8,8 @@ enum Term<'a> {
     Bool(bool),
     Ident(&'a str),
     Access(Box<Term<'a>>, &'a str),
-    Lambda(&'a str, Box<Term<'a>>),
-    Apply(Box<(Term<'a>, Term<'a>)>),
+    Lambda(Vec<&'a str>, Box<Term<'a>>),
+    Apply(Vec<Term<'a>>),
     Let(&'a str, Box<(Term<'a>, Term<'a>)>),
     LetRecs(Vec<(&'a str, Term<'a>)>, Box<Term<'a>>),
 }
@@ -37,10 +37,23 @@ impl fmt::Display for Term<'_> {
             Self::Bool(r#bool) => write!(f, "{bool}"),
             Self::Ident(ident) => write!(f, "{ident}"),
             Self::Access(term, ident) => write!(f, "{term}.{ident}"),
-            Self::Lambda(arg, term) => write!(f, "\\{arg} -> {term}"),
-            Self::Apply(func_arg) => {
-                let (func, arg) = func_arg.as_ref();
-                write!(f, "({func} {arg})")
+            Self::Lambda(args, term) => {
+                write!(f, "\\{}", args[0])?;
+                for arg in &args[1..] {
+                    write!(f, ", {arg}")?;
+                }
+                write!(f, " -> {term}")
+            }
+            Self::Apply(func_args) if func_args.is_empty() => unreachable!(),
+            Self::Apply(func_args) if func_args.len() == 1 => {
+                write!(f, "{}()", func_args[0])
+            }
+            Self::Apply(func_args) => {
+                write!(f, "{}({}", func_args[0], func_args[1])?;
+                for arg in &func_args[2..] {
+                    write!(f, ", {arg}")?;
+                }
+                write!(f, ")")
             }
             Self::Let(ident, value_body) => {
                 let (value, body) = value_body.as_ref();
@@ -63,9 +76,17 @@ impl fmt::Display for Type<'_> {
         match self {
             Self::Var(k) => write!(f, "__{k}__"),
             Self::Op(op, types) if types.is_empty() => write!(f, "{op}"),
+            Self::Op("fn", types) if types.is_empty() => unreachable!(),
+            Self::Op("fn", types) if types.len() == 1 => write!(f, "(() => {})", types[0]),
             Self::Op("fn", types) => {
-                assert!(types.len() == 2);
-                write!(f, "({} -> {})", types[0], types[1])
+                let n = types.len();
+                assert!(1 < n);
+
+                write!(f, "(({}", types[0])?;
+                for r#type in &types[1..(n - 1)] {
+                    write!(f, ", {type}")?;
+                }
+                write!(f, ") -> {})", types[n - 1])
             }
             Self::Op("tuple", types) => {
                 assert!(types.len() == 2);
@@ -299,27 +320,47 @@ impl<'a> Context<'a> {
 
                 Ok(ident_type)
             }
-            Term::Apply(func_arg) => {
-                let (func, arg) = func_arg.as_ref();
-
-                let func_type = self.term_to_type(func)?;
-                let arg_type = self.term_to_type(arg)?;
+            Term::Apply(func_args) if func_args.is_empty() => unreachable!(),
+            Term::Apply(func_args) if func_args.len() == 1 => {
+                let func_type = self.term_to_type(&func_args[0])?;
                 let ret_type = self.state.next_var().1;
 
-                self.unify(Type::Op("fn", vec![arg_type, ret_type.clone()]), func_type)?;
+                self.unify(Type::Op("fn", vec![ret_type.clone()]), func_type)?;
 
                 Ok(self.state.prune(ret_type))
             }
-            Term::Lambda(arg, term) => {
-                let (arg_k, arg_type) = self.state.next_var();
-                self.non_generics.insert(arg_k);
-                self.env.push((arg, arg_type.clone()));
+            Term::Apply(func_args) => {
+                let func_type = self.term_to_type(&func_args[0])?;
+                let mut op_types = Vec::with_capacity(func_args.len());
 
-                let term_type = self.term_to_type(term)?;
-                let func_type = Type::Op("fn", vec![arg_type, term_type]);
+                for arg in &func_args[1..] {
+                    op_types.push(self.term_to_type(arg)?);
+                }
+                let ret_type = self.state.next_var().1;
+                op_types.push(ret_type.clone());
 
-                assert!(*arg == self.env.pop().unwrap().0);
-                assert!(self.non_generics.remove(&arg_k));
+                self.unify(Type::Op("fn", op_types), func_type)?;
+
+                Ok(self.state.prune(ret_type))
+            }
+            Term::Lambda(args, term) => {
+                let mut arg_vars = Vec::with_capacity(args.len());
+                let mut func_types = Vec::with_capacity(args.len() + 1);
+                for arg in args {
+                    let (arg_k, arg_type) = self.state.next_var();
+                    self.non_generics.insert(arg_k);
+                    self.env.push((arg, arg_type.clone()));
+                    arg_vars.push((arg, arg_k));
+                    func_types.push(arg_type);
+                }
+
+                func_types.push(self.term_to_type(term)?);
+                let func_type = Type::Op("fn", func_types);
+
+                for (arg, arg_k) in arg_vars.into_iter().rev() {
+                    assert!(*arg == self.env.pop().unwrap().0);
+                    assert!(self.non_generics.remove(&arg_k));
+                }
 
                 Ok(self.state.prune(func_type))
             }
@@ -373,22 +414,17 @@ fn main() {
         "pair",
         Type::Op(
             "fn",
-            vec![
-                a.clone(),
-                Type::Op("fn", vec![b.clone(), Type::Op("tuple", vec![a, b])]),
-            ],
+            vec![a.clone(), b.clone(), Type::Op("tuple", vec![a, b])],
         ),
     ));
 
     let term = Term::Lambda(
-        "x",
-        Box::new(Term::Apply(Box::new((
-            Term::Apply(Box::new((
-                Term::Ident("pair"),
-                Term::Access(Box::new(Term::Ident("x")), "y"),
-            ))),
+        vec!["x"],
+        Box::new(Term::Apply(vec![
+            Term::Ident("pair"),
+            Term::Access(Box::new(Term::Ident("x")), "y"),
             Term::Access(Box::new(Term::Ident("x")), "z"),
-        )))),
+        ])),
     );
 
     print!("{term}");
@@ -426,14 +462,14 @@ mod tests {
         let term = Term::Let(
             "f",
             Box::new((
-                Term::Lambda("x", Box::new(Term::Ident("x"))),
-                Term::Apply(Box::new((
-                    Term::Apply(Box::new((
+                Term::Lambda(vec!["x"], Box::new(Term::Ident("x"))),
+                Term::Apply(vec![
+                    Term::Apply(vec![
                         Term::Ident("pair"),
-                        Term::Apply(Box::new((Term::Ident("f"), Term::Int(-123)))),
-                    ))),
-                    Term::Apply(Box::new((Term::Ident("f"), Term::Bool(true)))),
-                ))),
+                        Term::Apply(vec![Term::Ident("f"), Term::Int(-123)]),
+                    ]),
+                    Term::Apply(vec![Term::Ident("f"), Term::Bool(true)]),
+                ]),
             )),
         );
 
@@ -452,8 +488,8 @@ mod tests {
         let term = Term::Let(
             "g",
             Box::new((
-                Term::Lambda("f", Box::new(Term::Int(-1))),
-                Term::Apply(Box::new((Term::Ident("g"), Term::Ident("g")))),
+                Term::Lambda(vec!["f"], Box::new(Term::Int(-1))),
+                Term::Apply(vec![Term::Ident("g"), Term::Ident("g")]),
             )),
         );
 
@@ -465,15 +501,15 @@ mod tests {
         let mut context = Context::default();
 
         let term = Term::Lambda(
-            "f",
+            vec!["f"],
             Box::new(Term::Lambda(
-                "g",
+                vec!["g"],
                 Box::new(Term::Lambda(
-                    "x",
-                    Box::new(Term::Apply(Box::new((
+                    vec!["x"],
+                    Box::new(Term::Apply(vec![
                         Term::Ident("g"),
-                        Term::Apply(Box::new((Term::Ident("f"), Term::Ident("x")))),
-                    )))),
+                        Term::Apply(vec![Term::Ident("f"), Term::Ident("x")]),
+                    ])),
                 )),
             )),
         );
@@ -516,25 +552,25 @@ mod tests {
                 (
                     "f",
                     Term::Lambda(
-                        "x",
-                        Box::new(Term::Apply(Box::new((Term::Ident("g"), Term::Ident("x"))))),
+                        vec!["x"],
+                        Box::new(Term::Apply(vec![Term::Ident("g"), Term::Ident("x")])),
                     ),
                 ),
                 (
                     "g",
                     Term::Lambda(
-                        "x",
-                        Box::new(Term::Apply(Box::new((Term::Ident("f"), Term::Ident("x"))))),
+                        vec!["x"],
+                        Box::new(Term::Apply(vec![Term::Ident("f"), Term::Ident("x")])),
                     ),
                 ),
             ],
-            Box::new(Term::Apply(Box::new((
-                Term::Apply(Box::new((
+            Box::new(Term::Apply(vec![
+                Term::Apply(vec![
                     Term::Ident("pair"),
-                    Term::Apply(Box::new((Term::Ident("g"), Term::Bool(true)))),
-                ))),
-                Term::Apply(Box::new((Term::Ident("f"), Term::Int(-1)))),
-            )))),
+                    Term::Apply(vec![Term::Ident("g"), Term::Bool(true)]),
+                ]),
+                Term::Apply(vec![Term::Ident("f"), Term::Int(-1)]),
+            ])),
         );
 
         let expected = Ok(Type::Op("tuple", vec![Type::Var(8), Type::Var(9)]));
@@ -563,15 +599,15 @@ mod tests {
                 (
                     "f",
                     Term::Lambda(
-                        "x",
-                        Box::new(Term::Apply(Box::new((Term::Ident("g"), Term::Ident("x"))))),
+                        vec!["x"],
+                        Box::new(Term::Apply(vec![Term::Ident("g"), Term::Ident("x")])),
                     ),
                 ),
                 (
                     "g",
                     Term::Lambda(
-                        "x",
-                        Box::new(Term::Apply(Box::new((Term::Ident("f"), Term::Ident("x"))))),
+                        vec!["x"],
+                        Box::new(Term::Apply(vec![Term::Ident("f"), Term::Ident("x")])),
                     ),
                 ),
             ],
@@ -579,13 +615,13 @@ mod tests {
                 "x",
                 Box::new((
                     Term::Lambda(
-                        "y",
-                        Box::new(Term::Apply(Box::new((Term::Ident("f"), Term::Int(0))))),
+                        vec!["y"],
+                        Box::new(Term::Apply(vec![Term::Ident("f"), Term::Int(0)])),
                     ),
-                    Term::Apply(Box::new((
-                        Term::Apply(Box::new((Term::Ident("pair"), Term::Ident("g")))),
+                    Term::Apply(vec![
+                        Term::Apply(vec![Term::Ident("pair"), Term::Ident("g")]),
                         Term::Ident("x"),
-                    ))),
+                    ]),
                 )),
             )),
         );
@@ -618,18 +654,18 @@ mod tests {
         ));
 
         let term = Term::Lambda(
-            "g",
+            vec!["g"],
             Box::new(Term::Let(
                 "f",
                 Box::new((
-                    Term::Lambda("x", Box::new(Term::Ident("g"))),
-                    Term::Apply(Box::new((
-                        Term::Apply(Box::new((
+                    Term::Lambda(vec!["x"], Box::new(Term::Ident("g"))),
+                    Term::Apply(vec![
+                        Term::Apply(vec![
                             Term::Ident("pair"),
-                            Term::Apply(Box::new((Term::Ident("f"), Term::Int(-1)))),
-                        ))),
-                        Term::Apply(Box::new((Term::Ident("f"), Term::Bool(false)))),
-                    ))),
+                            Term::Apply(vec![Term::Ident("f"), Term::Int(-1)]),
+                        ]),
+                        Term::Apply(vec![Term::Ident("f"), Term::Bool(false)]),
+                    ]),
                 )),
             )),
         );
@@ -662,14 +698,14 @@ mod tests {
         ));
 
         let term = Term::Lambda(
-            "x",
-            Box::new(Term::Apply(Box::new((
-                Term::Apply(Box::new((
+            vec!["x"],
+            Box::new(Term::Apply(vec![
+                Term::Apply(vec![
                     Term::Ident("pair"),
                     Term::Access(Box::new(Term::Ident("x")), "y"),
-                ))),
+                ]),
                 Term::Access(Box::new(Term::Ident("x")), "z"),
-            )))),
+            ])),
         );
 
         let expected = Ok(Type::Op(
@@ -684,6 +720,54 @@ mod tests {
     }
 
     #[test]
+    fn term_to_type_ok_7() {
+        let mut context = Context::default();
+        context.env.push((
+            "x",
+            Type::Dict(
+                [
+                    ("a", Type::Op("int", vec![])),
+                    ("b", Type::Op("bool", vec![])),
+                ]
+                .into(),
+                None,
+            ),
+        ));
+
+        let term = Term::Apply(vec![
+            Term::Lambda(
+                vec!["x"],
+                Box::new(Term::Access(Box::new(Term::Ident("x")), "a")),
+            ),
+            Term::Ident("x"),
+        ]);
+
+        assert!(context.term_to_type(&term) == Ok(Type::Op("int", vec![])));
+    }
+
+    #[test]
+    fn term_to_type_ok_8() {
+        let mut context = Context::default();
+        let x = context.state.next_var().1;
+        context.env.push(("x", x));
+
+        let term = Term::Let(
+            "f",
+            Box::new((
+                Term::Lambda(vec!["a", "b", "c"], Box::new(Term::Ident("a"))),
+                Term::Apply(vec![
+                    Term::Ident("f"),
+                    Term::Ident("x"),
+                    Term::Int(-1),
+                    Term::Bool(false),
+                ]),
+            )),
+        );
+
+        assert!(context.term_to_type(&term) == Ok(Type::Var(4)));
+    }
+
+    #[test]
     fn term_to_type_err_undefined() {
         let mut context = Context::default();
 
@@ -695,8 +779,8 @@ mod tests {
         let mut context = Context::default();
 
         let term = Term::Lambda(
-            "f",
-            Box::new(Term::Apply(Box::new((Term::Ident("f"), Term::Ident("f"))))),
+            vec!["f"],
+            Box::new(Term::Apply(vec![Term::Ident("f"), Term::Ident("f")])),
         );
 
         assert!(context.term_to_type(&term) == Err(Error::Infinite));
@@ -710,27 +794,37 @@ mod tests {
             Type::Op("fn", vec![Type::Op("int", vec![]), Type::Op("int", vec![])]),
         ));
 
-        let term = Term::Apply(Box::new((Term::Ident("f"), Term::Bool(true))));
+        let term = Term::Apply(vec![Term::Ident("f"), Term::Bool(true)]);
 
         assert!(context.term_to_type(&term) == Err(Error::Mismatch));
     }
 
     #[test]
-    fn term_to_type_err_arity() {
+    fn term_to_type_err_arity_0() {
         let mut context = Context::default();
-        context.env.push((
-            "f",
-            Type::Op(
-                "fn",
-                vec![
-                    Type::Op("int", vec![]),
-                    Type::Op("int", vec![]),
-                    Type::Op("int", vec![]),
-                ],
-            ),
-        ));
 
-        let term = Term::Apply(Box::new((Term::Ident("f"), Term::Int(-1))));
+        let term = Term::Let(
+            "f",
+            Box::new((
+                Term::Lambda(vec!["a", "b"], Box::new(Term::Ident("a"))),
+                Term::Apply(vec![Term::Ident("f"), Term::Int(-1)]),
+            )),
+        );
+
+        assert!(context.term_to_type(&term) == Err(Error::Arity));
+    }
+
+    #[test]
+    fn term_to_type_err_arity_1() {
+        let mut context = Context::default();
+
+        let term = Term::Let(
+            "f",
+            Box::new((
+                Term::Lambda(vec!["a"], Box::new(Term::Ident("a"))),
+                Term::Apply(vec![Term::Ident("f"), Term::Bool(false), Term::Int(-1)]),
+            )),
+        );
 
         assert!(context.term_to_type(&term) == Err(Error::Arity));
     }
