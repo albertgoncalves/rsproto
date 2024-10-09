@@ -234,14 +234,6 @@ impl<'a> Context<'a> {
         }
     }
 
-    fn ident_to_type(&mut self, ident: &'a str) -> Result<Type<'a>, Error> {
-        let Some(i) = self.env.iter().rposition(|(other, _)| ident == *other) else {
-            return Err(Error::Undefined);
-        };
-        self.generics.clear();
-        Ok(self.fresh(self.env[i].1.clone()))
-    }
-
     fn type_to_dict(&mut self, key: &'a str, r#type: Type<'a>) -> Type<'a> {
         let k = self.state.next_var().0;
         Type::Dict([(key, r#type)].into(), Some(k))
@@ -306,13 +298,19 @@ impl<'a> Context<'a> {
         }
     }
 
-    fn term_to_type(&mut self, term: &Term<'a>) -> Result<Type<'a>, Error> {
+    fn infer(&mut self, term: &Term<'a>) -> Result<Type<'a>, Error> {
         match term {
             Term::Int(..) => Ok(Type::Op("int", vec![])),
             Term::Bool(..) => Ok(Type::Op("bool", vec![])),
-            Term::Ident(ident) => self.ident_to_type(ident),
+            Term::Ident(ident) => {
+                let Some(i) = self.env.iter().rposition(|(other, _)| ident == other) else {
+                    return Err(Error::Undefined);
+                };
+                self.generics.clear();
+                Ok(self.fresh(self.env[i].1.clone()))
+            }
             Term::Access(term, ident) => {
-                let term_type = self.term_to_type(term)?;
+                let term_type = self.infer(term)?;
                 let ident_type = self.state.next_var().1;
 
                 let dict = self.type_to_dict(ident, ident_type.clone());
@@ -322,7 +320,7 @@ impl<'a> Context<'a> {
             }
             Term::Apply(func_args) if func_args.is_empty() => unreachable!(),
             Term::Apply(func_args) if func_args.len() == 1 => {
-                let func_type = self.term_to_type(&func_args[0])?;
+                let func_type = self.infer(&func_args[0])?;
                 let ret_type = self.state.next_var().1;
 
                 self.unify(Type::Op("fn", vec![ret_type.clone()]), func_type)?;
@@ -330,11 +328,11 @@ impl<'a> Context<'a> {
                 Ok(self.state.prune(ret_type))
             }
             Term::Apply(func_args) => {
-                let func_type = self.term_to_type(&func_args[0])?;
+                let func_type = self.infer(&func_args[0])?;
                 let mut op_types = Vec::with_capacity(func_args.len());
 
                 for arg in &func_args[1..] {
-                    op_types.push(self.term_to_type(arg)?);
+                    op_types.push(self.infer(arg)?);
                 }
                 let ret_type = self.state.next_var().1;
                 op_types.push(ret_type.clone());
@@ -354,7 +352,7 @@ impl<'a> Context<'a> {
                     func_types.push(arg_type);
                 }
 
-                func_types.push(self.term_to_type(term)?);
+                func_types.push(self.infer(term)?);
                 let func_type = Type::Op("fn", func_types);
 
                 for (arg, arg_k) in arg_vars.into_iter().rev() {
@@ -367,9 +365,9 @@ impl<'a> Context<'a> {
             Term::Let(ident, value_body) => {
                 let (value, body) = value_body.as_ref();
 
-                let value_type = self.term_to_type(value)?;
+                let value_type = self.infer(value)?;
                 self.env.push((ident, value_type));
-                let body_type = self.term_to_type(body)?;
+                let body_type = self.infer(body)?;
 
                 assert!(*ident == self.env.pop().unwrap().0);
 
@@ -387,14 +385,14 @@ impl<'a> Context<'a> {
                     values.push((value, r#type));
                 }
                 for (value, r#type) in values {
-                    let value_type = self.term_to_type(value)?;
+                    let value_type = self.infer(value)?;
                     self.unify(value_type, r#type)?;
                 }
                 for k in k_removes {
                     assert!(self.non_generics.remove(&k));
                 }
 
-                let body_type = self.term_to_type(body)?;
+                let body_type = self.infer(body)?;
 
                 for (ident, _) in bindings.iter().rev() {
                     assert!(*ident == self.env.pop().unwrap().0);
@@ -429,7 +427,7 @@ fn main() {
 
     print!("{term}");
 
-    let r#type = context.term_to_type(&term).unwrap();
+    let r#type = context.infer(&term).unwrap();
     println!(" :: {type}\n");
 
     for (k, r#type) in &context.state.links {
@@ -443,7 +441,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn term_to_type_ok_0() {
+    fn infer_ok_0() {
         let mut context = Context::default();
 
         let a = context.state.next_var().1;
@@ -478,11 +476,11 @@ mod tests {
             vec![Type::Op("int", vec![]), Type::Op("bool", vec![])],
         ));
 
-        assert!(context.term_to_type(&term) == expected);
+        assert!(context.infer(&term) == expected);
     }
 
     #[test]
-    fn term_to_type_ok_1() {
+    fn infer_ok_1() {
         let mut context = Context::default();
 
         let term = Term::Let(
@@ -493,11 +491,11 @@ mod tests {
             )),
         );
 
-        assert!(context.term_to_type(&term) == Ok(Type::Op("int", vec![])));
+        assert!(context.infer(&term) == Ok(Type::Op("int", vec![])));
     }
 
     #[test]
-    fn term_to_type_ok_2() {
+    fn infer_ok_2() {
         let mut context = Context::default();
 
         let term = Term::Lambda(
@@ -528,11 +526,11 @@ mod tests {
             ],
         ));
 
-        assert!(context.term_to_type(&term) == expected);
+        assert!(context.infer(&term) == expected);
     }
 
     #[test]
-    fn term_to_type_ok_3() {
+    fn infer_ok_3() {
         let mut context = Context::default();
         let a = context.state.next_var().1;
         let b = context.state.next_var().1;
@@ -575,11 +573,11 @@ mod tests {
 
         let expected = Ok(Type::Op("tuple", vec![Type::Var(8), Type::Var(9)]));
 
-        assert!(context.term_to_type(&term) == expected);
+        assert!(context.infer(&term) == expected);
     }
 
     #[test]
-    fn term_to_type_ok_4() {
+    fn infer_ok_4() {
         let mut context = Context::default();
         let a = context.state.next_var().1;
         let b = context.state.next_var().1;
@@ -634,11 +632,11 @@ mod tests {
             ],
         ));
 
-        assert!(context.term_to_type(&term) == expected);
+        assert!(context.infer(&term) == expected);
     }
 
     #[test]
-    fn term_to_type_ok_5() {
+    fn infer_ok_5() {
         let mut context = Context::default();
         let a = context.state.next_var().1;
         let b = context.state.next_var().1;
@@ -678,11 +676,11 @@ mod tests {
             ],
         ));
 
-        assert!(context.term_to_type(&term) == expected);
+        assert!(context.infer(&term) == expected);
     }
 
     #[test]
-    fn term_to_type_ok_6() {
+    fn infer_ok_6() {
         let mut context = Context::default();
         let a = context.state.next_var().1;
         let b = context.state.next_var().1;
@@ -716,11 +714,11 @@ mod tests {
             ],
         ));
 
-        assert!(context.term_to_type(&term) == expected);
+        assert!(context.infer(&term) == expected);
     }
 
     #[test]
-    fn term_to_type_ok_7() {
+    fn infer_ok_7() {
         let mut context = Context::default();
         context.env.push((
             "x",
@@ -742,11 +740,11 @@ mod tests {
             Term::Ident("x"),
         ]);
 
-        assert!(context.term_to_type(&term) == Ok(Type::Op("int", vec![])));
+        assert!(context.infer(&term) == Ok(Type::Op("int", vec![])));
     }
 
     #[test]
-    fn term_to_type_ok_8() {
+    fn infer_ok_8() {
         let mut context = Context::default();
         let x = context.state.next_var().1;
         context.env.push(("x", x));
@@ -764,18 +762,18 @@ mod tests {
             )),
         );
 
-        assert!(context.term_to_type(&term) == Ok(Type::Var(4)));
+        assert!(context.infer(&term) == Ok(Type::Var(4)));
     }
 
     #[test]
-    fn term_to_type_err_undefined() {
+    fn infer_err_undefined() {
         let mut context = Context::default();
 
-        assert!(context.term_to_type(&Term::Ident("x")) == Err(Error::Undefined));
+        assert!(context.infer(&Term::Ident("x")) == Err(Error::Undefined));
     }
 
     #[test]
-    fn term_to_type_err_infnite() {
+    fn infer_err_infinite_0() {
         let mut context = Context::default();
 
         let term = Term::Lambda(
@@ -783,11 +781,29 @@ mod tests {
             Box::new(Term::Apply(vec![Term::Ident("f"), Term::Ident("f")])),
         );
 
-        assert!(context.term_to_type(&term) == Err(Error::Infinite));
+        assert!(context.infer(&term) == Err(Error::Infinite));
     }
 
     #[test]
-    fn term_to_type_err_op() {
+    fn infer_err_infinite_1() {
+        let mut context = Context::default();
+
+        let term = Term::Lambda(
+            vec!["y"],
+            Box::new(Term::Apply(vec![
+                Term::Ident("y"),
+                Term::Lambda(
+                    vec!["z"],
+                    Box::new(Term::Apply(vec![Term::Ident("y"), Term::Ident("z")])),
+                ),
+            ])),
+        );
+
+        assert!(context.infer(&term) == Err(Error::Infinite));
+    }
+
+    #[test]
+    fn infer_err_mismatch() {
         let mut context = Context::default();
         context.env.push((
             "f",
@@ -796,11 +812,11 @@ mod tests {
 
         let term = Term::Apply(vec![Term::Ident("f"), Term::Bool(true)]);
 
-        assert!(context.term_to_type(&term) == Err(Error::Mismatch));
+        assert!(context.infer(&term) == Err(Error::Mismatch));
     }
 
     #[test]
-    fn term_to_type_err_arity_0() {
+    fn infer_err_arity_0() {
         let mut context = Context::default();
 
         let term = Term::Let(
@@ -811,11 +827,11 @@ mod tests {
             )),
         );
 
-        assert!(context.term_to_type(&term) == Err(Error::Arity));
+        assert!(context.infer(&term) == Err(Error::Arity));
     }
 
     #[test]
-    fn term_to_type_err_arity_1() {
+    fn infer_err_arity_1() {
         let mut context = Context::default();
 
         let term = Term::Let(
@@ -826,11 +842,11 @@ mod tests {
             )),
         );
 
-        assert!(context.term_to_type(&term) == Err(Error::Arity));
+        assert!(context.infer(&term) == Err(Error::Arity));
     }
 
     #[test]
-    fn term_to_type_err_key() {
+    fn infer_err_key() {
         let mut context = Context::default();
         context.env.push((
             "x",
@@ -839,6 +855,6 @@ mod tests {
 
         let term = Term::Access(Box::new(Term::Ident("x")), "z");
 
-        assert!(context.term_to_type(&term) == Err(Error::Key));
+        assert!(context.infer(&term) == Err(Error::Key));
     }
 }
