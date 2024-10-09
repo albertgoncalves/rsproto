@@ -766,6 +766,73 @@ mod tests {
     }
 
     #[test]
+    fn infer_ok_9() {
+        let mut context = Context::default();
+
+        let term = Term::Lambda(
+            vec!["x"],
+            Box::new(Term::Let(
+                "y",
+                Box::new((
+                    Term::Let(
+                        "z",
+                        Box::new((
+                            Term::Apply(vec![
+                                Term::Ident("x"),
+                                Term::Lambda(vec!["x"], Box::new(Term::Ident("x"))),
+                            ]),
+                            Term::Ident("z"),
+                        )),
+                    ),
+                    Term::Ident("y"),
+                )),
+            )),
+        );
+
+        let expected = Ok(Type::Op(
+            "fn",
+            vec![
+                Type::Op(
+                    "fn",
+                    vec![
+                        Type::Op("fn", vec![Type::Var(1), Type::Var(1)]),
+                        Type::Var(2),
+                    ],
+                ),
+                Type::Var(2),
+            ],
+        ));
+
+        assert!(context.infer(&term) == expected);
+    }
+
+    #[test]
+    fn infer_ok_10() {
+        let mut context = Context::default();
+
+        let term = Term::Lambda(
+            vec!["x", "y", "k"],
+            Box::new(Term::Apply(vec![
+                Term::Ident("k"),
+                Term::Apply(vec![Term::Ident("k"), Term::Ident("x"), Term::Ident("y")]),
+                Term::Apply(vec![Term::Ident("k"), Term::Ident("y"), Term::Ident("x")]),
+            ])),
+        );
+
+        let expected = Ok(Type::Op(
+            "fn",
+            vec![
+                Type::Var(0),
+                Type::Var(0),
+                Type::Op("fn", vec![Type::Var(0), Type::Var(0), Type::Var(0)]),
+                Type::Var(0),
+            ],
+        ));
+
+        assert!(context.infer(&term) == expected);
+    }
+
+    #[test]
     fn infer_err_undefined() {
         let mut context = Context::default();
 
@@ -797,6 +864,24 @@ mod tests {
                     Box::new(Term::Apply(vec![Term::Ident("y"), Term::Ident("z")])),
                 ),
             ])),
+        );
+
+        assert!(context.infer(&term) == Err(Error::Infinite));
+    }
+
+    #[test]
+    fn infer_err_infinite_2() {
+        let mut context = Context::default();
+
+        let term = Term::Lambda(
+            vec!["x"],
+            Box::new(Term::Let(
+                "y",
+                Box::new((
+                    Term::Ident("x"),
+                    Term::Apply(vec![Term::Ident("y"), Term::Ident("y")]),
+                )),
+            )),
         );
 
         assert!(context.infer(&term) == Err(Error::Infinite));
