@@ -150,6 +150,7 @@ impl<'a> State<'a> {
                     Type::Var(..) => HashMap::new(),
                     Type::Op(..) => unreachable!(),
                 };
+                self.links.remove(&k);
                 for (ident, old_type) in old_dict {
                     assert!(new_dict.insert(ident, self.prune(old_type)).is_none());
                 }
