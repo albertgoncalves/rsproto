@@ -77,16 +77,16 @@ impl fmt::Display for Type<'_> {
             Self::Var(k) => write!(f, "__{k}__"),
             Self::Op(op, types) if types.is_empty() => write!(f, "{op}"),
             Self::Op("fn", types) if types.is_empty() => unreachable!(),
-            Self::Op("fn", types) if types.len() == 1 => write!(f, "(() => {})", types[0]),
+            Self::Op("fn", types) if types.len() == 1 => write!(f, "() => {}", types[0]),
             Self::Op("fn", types) => {
                 let n = types.len();
                 assert!(1 < n);
 
-                write!(f, "(({}", types[0])?;
+                write!(f, "({}", types[0])?;
                 for r#type in &types[1..(n - 1)] {
                     write!(f, ", {type}")?;
                 }
-                write!(f, ") -> {})", types[n - 1])
+                write!(f, ") -> {}", types[n - 1])
             }
             Self::Op("tuple", types) => {
                 assert!(types.len() == 2);
