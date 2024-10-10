@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 enum Term<'a> {
+    Void,
     Int(i64),
     Bool(bool),
     Ident(&'a str),
@@ -12,6 +13,8 @@ enum Term<'a> {
     Apply(Vec<Term<'a>>),
     Let(&'a str, Box<(Term<'a>, Term<'a>)>),
     LetRecs(Vec<(&'a str, Term<'a>)>, Box<Term<'a>>),
+    IfElse(Box<(Term<'a>, Term<'a>, Term<'a>)>),
+    Seq(Box<(Term<'a>, Term<'a>)>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,6 +36,7 @@ enum Error {
 impl fmt::Display for Term<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Void => write!(f, "()"),
             Self::Int(int) => write!(f, "{int}"),
             Self::Bool(r#bool) => write!(f, "{bool}"),
             Self::Ident(ident) => write!(f, "{ident}"),
@@ -66,6 +70,14 @@ impl fmt::Display for Term<'_> {
                     write!(f, " and {} = {}", binding.0, binding.1)?;
                 }
                 write!(f, " in {body}")
+            }
+            Term::IfElse(condition_true_false) => {
+                let (condition, r#true, r#false) = condition_true_false.as_ref();
+                write!(f, "({condition} ? {true} : {false})")
+            }
+            Term::Seq(first_second) => {
+                let (first, second) = first_second.as_ref();
+                write!(f, "({first}); {second}")
             }
         }
     }
@@ -299,8 +311,10 @@ impl<'a> Context<'a> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn infer(&mut self, term: &Term<'a>) -> Result<Type<'a>, Error> {
         match term {
+            Term::Void => Ok(Type::Op("void", vec![])),
             Term::Int(..) => Ok(Type::Op("int", vec![])),
             Term::Bool(..) => Ok(Type::Op("bool", vec![])),
             Term::Ident(ident) => {
@@ -400,6 +414,25 @@ impl<'a> Context<'a> {
                 }
 
                 Ok(self.state.prune(body_type))
+            }
+            Term::IfElse(condition_true_false) => {
+                let (condition, r#true, r#false) = condition_true_false.as_ref();
+
+                let condition_type = self.infer(condition)?;
+                let true_type = self.infer(r#true)?;
+                let false_type = self.infer(r#false)?;
+
+                self.unify(condition_type, Type::Op("bool", vec![]))?;
+                self.unify(true_type.clone(), false_type)?;
+
+                Ok(self.state.prune(true_type))
+            }
+            Term::Seq(first_second) => {
+                let (first, second) = first_second.as_ref();
+                let first_type = self.infer(first)?;
+                self.unify(first_type, Type::Op("void", vec![]))?;
+                let second_type = self.infer(second)?;
+                Ok(self.state.prune(second_type))
             }
         }
     }
