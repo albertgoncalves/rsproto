@@ -867,10 +867,164 @@ mod tests {
     }
 
     #[test]
-    fn infer_err_undefined() {
+    fn infer_ok_11() {
+        let mut context = Context::default();
+        context.env.push((
+            "x",
+            Type::Dict(
+                [
+                    ("a", Type::Op("int", vec![])),
+                    ("b", Type::Op("bool", vec![])),
+                ]
+                .into(),
+                None,
+            ),
+        ));
+
+        let term = Term::Let(
+            "f",
+            Box::new((
+                Term::Lambda(
+                    vec!["x"],
+                    Box::new(Term::Let(
+                        "y",
+                        Box::new((
+                            Term::Access(Box::new(Term::Ident("x")), "a"),
+                            Term::Ident("x"),
+                        )),
+                    )),
+                ),
+                Term::Apply(vec![Term::Ident("f"), Term::Ident("x")]),
+            )),
+        );
+
+        let expected = Ok(Type::Dict(
+            [
+                ("a", Type::Op("int", vec![])),
+                ("b", Type::Op("bool", vec![])),
+            ]
+            .into(),
+            Some(2),
+        ));
+
+        assert!(context.infer(&term) == expected);
+    }
+
+    #[test]
+    fn infer_ok_12() {
+        let mut context = Context::default();
+        context.env.push((
+            "x",
+            Type::Dict(
+                [
+                    ("a", Type::Op("int", vec![])),
+                    ("b", Type::Op("bool", vec![])),
+                ]
+                .into(),
+                None,
+            ),
+        ));
+
+        let term = Term::Lambda(
+            vec!["x"],
+            Box::new(Term::Let(
+                "y",
+                Box::new((
+                    Term::Access(Box::new(Term::Ident("x")), "a"),
+                    Term::Ident("x"),
+                )),
+            )),
+        );
+
+        let expected = Ok(Type::Op(
+            "fn",
+            vec![
+                Type::Dict([("a", Type::Var(1))].into(), Some(2)),
+                Type::Dict([("a", Type::Var(1))].into(), Some(2)),
+            ],
+        ));
+
+        assert!(context.infer(&term) == expected);
+    }
+
+    #[test]
+    fn infer_ok_13() {
+        let mut context = Context::default();
+        let a = context.state.next_var().1;
+        context.env.push(("a", a));
+        context.env.push(("b", Type::Op("int", vec![])));
+
+        let term = Term::IfElse(Box::new((
+            Term::Bool(false),
+            Term::Lambda(vec![], Box::new(Term::Ident("a"))),
+            Term::Lambda(vec![], Box::new(Term::Ident("b"))),
+        )));
+
+        assert!(context.infer(&term) == Ok(Type::Op("fn", vec![Type::Op("int", vec![])])));
+    }
+
+    #[test]
+    fn infer_ok_14() {
+        let mut context = Context::default();
+
+        let term = Term::Seq(Box::new((Term::Void, Term::Int(-1))));
+
+        assert!(context.infer(&term) == Ok(Type::Op("int", vec![])));
+    }
+
+    #[test]
+    fn infer_ok_15() {
+        let mut context = Context::default();
+
+        let term = Term::Let(
+            "x",
+            Box::new((
+                Term::Int(1),
+                Term::Seq(Box::new((
+                    Term::Let("x", Box::new((Term::Bool(false), Term::Void))),
+                    Term::Ident("x"),
+                ))),
+            )),
+        );
+
+        /*
+        let x = 1 in
+        {
+            let x = false;
+            x
+        }
+        x
+        */
+
+        assert!(context.infer(&term) == Ok(Type::Op("int", vec![])));
+    }
+
+    #[test]
+    fn infer_err_undefined_0() {
         let mut context = Context::default();
 
         assert!(context.infer(&Term::Ident("x")) == Err(Error::Undefined));
+    }
+
+    #[test]
+    fn infer_err_undefined_1() {
+        let mut context = Context::default();
+
+        let term = Term::Seq(Box::new((Term::Ident("x"), Term::Int(-1))));
+
+        assert!(context.infer(&term) == Err(Error::Undefined));
+    }
+
+    #[test]
+    fn infer_err_undefined_2() {
+        let mut context = Context::default();
+
+        let term = Term::Seq(Box::new((
+            Term::Let("x", Box::new((Term::Int(1), Term::Void))),
+            Term::Ident("x"),
+        )));
+
+        assert!(context.infer(&term) == Err(Error::Undefined));
     }
 
     #[test]
@@ -922,7 +1076,7 @@ mod tests {
     }
 
     #[test]
-    fn infer_err_mismatch() {
+    fn infer_err_mismatch_0() {
         let mut context = Context::default();
         context.env.push((
             "f",
@@ -930,6 +1084,21 @@ mod tests {
         ));
 
         let term = Term::Apply(vec![Term::Ident("f"), Term::Bool(true)]);
+
+        assert!(context.infer(&term) == Err(Error::Mismatch));
+    }
+
+    #[test]
+    fn infer_err_mismatch_1() {
+        let mut context = Context::default();
+        context.env.push(("a", Type::Op("bool", vec![])));
+        context.env.push(("b", Type::Op("int", vec![])));
+
+        let term = Term::IfElse(Box::new((
+            Term::Bool(false),
+            Term::Ident("a"),
+            Term::Ident("b"),
+        )));
 
         assert!(context.infer(&term) == Err(Error::Mismatch));
     }
@@ -960,6 +1129,22 @@ mod tests {
                 Term::Apply(vec![Term::Ident("f"), Term::Bool(false), Term::Int(-1)]),
             )),
         );
+
+        assert!(context.infer(&term) == Err(Error::Arity));
+    }
+
+    #[test]
+    fn infer_err_arity_2() {
+        let mut context = Context::default();
+        let a = context.state.next_var().1;
+        context.env.push(("a", a));
+        context.env.push(("b", Type::Op("int", vec![])));
+
+        let term = Term::IfElse(Box::new((
+            Term::Bool(false),
+            Term::Lambda(vec!["a"], Box::new(Term::Ident("a"))),
+            Term::Lambda(vec![], Box::new(Term::Ident("b"))),
+        )));
 
         assert!(context.infer(&term) == Err(Error::Arity));
     }
