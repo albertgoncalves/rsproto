@@ -48,6 +48,7 @@ export CLIPPY_FLAGS=(
     -W "clippy::suspicious"
     -A "clippy::upper-case-acronyms"
     -A "dead_code"
+    -A "edition-2024-expr-fragment-specifier"
     -A "non-snake-case"
     -D "warnings"
 )
