@@ -58,7 +58,7 @@ type GLDEBUGPROC = extern "C" fn(
     userParam: *const c_void,
 );
 
-extern "C" {
+unsafe extern "C" {
     fn glfwGetVersionString() -> *const c_char;
 
     fn glfwInit() -> c_int;
@@ -186,6 +186,7 @@ extern "C" fn callback_gl_debug(
             length.try_into().unwrap(),
         ));
         if severity == GL_DEBUG_SEVERITY_NOTIFICATION {
+            #[allow(static_mut_refs)]
             GL_DEBUG_MESSAGES.push(message.to_owned());
         } else {
             panic!("{}", message);
@@ -274,7 +275,7 @@ fn main() {
             message.as_ptr().cast::<i8>(),
         );
 
-        #[allow(clippy::needless_range_loop)]
+        #[allow(clippy::needless_range_loop, static_mut_refs)]
         for i in 0..GL_DEBUG_MESSAGES.len() {
             eprintln!("{}", GL_DEBUG_MESSAGES.get_unchecked(i));
         }

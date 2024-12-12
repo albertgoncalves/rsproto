@@ -11,8 +11,8 @@ const BUFFER_CAP: usize = BUFFER_WIDTH * BUFFER_HEIGHT;
 const N: usize = 4;
 const BLOCK_WIDTH: usize = BUFFER_WIDTH / N;
 const BLOCK_HEIGHT: usize = BUFFER_HEIGHT / N;
-const X_BLOCKS: usize = (BUFFER_WIDTH + BLOCK_WIDTH - 1) / BLOCK_WIDTH;
-const Y_BLOCKS: usize = (BUFFER_HEIGHT + BLOCK_HEIGHT - 1) / BLOCK_HEIGHT;
+const X_BLOCKS: usize = BUFFER_WIDTH.div_ceil(BLOCK_WIDTH);
+const Y_BLOCKS: usize = BUFFER_HEIGHT.div_ceil(BLOCK_HEIGHT);
 const BLOCKS_CAP: usize = X_BLOCKS * Y_BLOCKS;
 
 const THREAD_CAP: usize = 3;
