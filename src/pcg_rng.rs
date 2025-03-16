@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 // NOTE: See `https://github.com/imneme/pcg-c-basic/blob/master/pcg_basic.c`.
 // NOTE: See `https://prng.di.unimi.it/`.
 // NOTE: See `https://github.com/lemire/testingRNG`.
@@ -43,6 +45,7 @@ impl Random<u32> for PcgRng {
             .rotate_right(state.wrapping_shr(59) as u32)
     }
 
+    #[must_use]
     fn uniform_bounded(&mut self, bound: u32) -> u32 {
         let threshold: u32 = bound.wrapping_neg() % bound;
         loop {
@@ -54,8 +57,17 @@ impl Random<u32> for PcgRng {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn main() {
     let mut rng = PcgRng::new();
+    rng.seed(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_micros() as u64,
+        1,
+    );
+
     println!("{}", rng.uniform());
     println!("{}", rng.uniform());
     println!("{}", rng.uniform_bounded(123));
