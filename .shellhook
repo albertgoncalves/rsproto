@@ -46,6 +46,8 @@ export CLIPPY_FLAGS=(
     -W "clippy::pedantic"
     -W "clippy::perf"
     -W "clippy::suspicious"
+    -A "clippy::match-on-vec-items"
+    -A "clippy::single_match_else"
     -A "clippy::upper-case-acronyms"
     -A "dead_code"
     -A "edition-2024-expr-fragment-specifier"
