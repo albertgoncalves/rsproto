@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 use std::ffi::{c_char, c_float, c_int, c_uint, c_void, CStr, CString};
+use std::fmt::Write;
 use std::marker;
 use std::ptr;
 use std::slice::from_raw_parts;
@@ -143,10 +144,12 @@ const GL_DEBUG_SEVERITY_NOTIFICATION: GLenum = 0x826B;
 extern "C" fn callback_glfw_error(error_code: c_int, description: *const c_char) {
     let mut message = error_code.to_string();
     if !description.is_null() {
-        message.push_str(&format!(
+        write!(
+            message,
             ": {}",
             unsafe { CStr::from_ptr(description) }.to_str().unwrap(),
-        ));
+        )
+        .unwrap();
     }
     panic!("{}", message);
 }

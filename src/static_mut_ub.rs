@@ -1,6 +1,6 @@
 static mut EXAMPLE: i32 = 0;
 
-fn example(ref1: &mut i32, ref2: &mut i32) -> i32 {
+const fn example(ref1: &mut i32, ref2: &mut i32) -> i32 {
     *ref1 = 1;
     *ref2 = 2;
     *ref1

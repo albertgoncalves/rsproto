@@ -133,7 +133,7 @@ struct Context<'a> {
 }
 
 impl<'a> State<'a> {
-    fn next_var(&mut self) -> (u32, Type<'a>) {
+    const fn next_var(&mut self) -> (u32, Type<'a>) {
         let k = self.k;
         self.k += 1;
         (k, Type::Var(k))

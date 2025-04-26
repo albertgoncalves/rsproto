@@ -136,7 +136,7 @@ impl State {
         }
     }
 
-    fn get_k(&mut self) -> i32 {
+    const fn get_k(&mut self) -> i32 {
         let k = self.k;
         self.k += 1;
         k
@@ -152,7 +152,7 @@ impl State {
             }
         } else {
             self.key_to_type.insert(key, (new_index, new_frozen));
-        };
+        }
         Ok(())
     }
 
