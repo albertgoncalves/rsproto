@@ -7,9 +7,8 @@ fn main() {
 
     thread::spawn(move || {
         thread::sleep(time::Duration::from_secs(1));
-        sender.send(()).unwrap();
+        sender.send(|| println!("Done!")).unwrap();
     });
 
-    receiver.recv().unwrap();
-    println!("Done!");
+    receiver.recv().unwrap()();
 }
