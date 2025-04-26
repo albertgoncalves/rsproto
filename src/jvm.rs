@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::str;
 
 #[derive(Clone, Debug)]
@@ -12,6 +13,8 @@ struct MemberField<'a> {
 struct MemberMethod<'a> {
     parent: &'a str,
     child: &'a str,
+    r#type: &'a str,
+    // TODO: Need a function to extract these two fields from the `type` field.
     arg_types: Vec<&'a str>,
     return_type: &'a str,
 }
@@ -237,6 +240,161 @@ impl<'a> Method<'a> {
         }
         stack_maps
     }
+
+    fn get_constant_pool(&self) -> ConstantPool<'a> {
+        let mut constant_pool = ConstantPool::new();
+        for inst in &self.insts {
+            match inst {
+                Inst::IConstN(..) | Inst::IfICmpGE(..) | Inst::Goto(..) | Inst::Return => (),
+                Inst::IStoreN(name) => {
+                    constant_pool.insert_utf8(name);
+                }
+                Inst::ILoadN(name) | Inst::IInc(name, _) => {
+                    assert!(constant_pool.keys.contains_key(&ConstantKey::Utf8(name)));
+                }
+                Inst::GetStatic(field) => {
+                    constant_pool.insert_field(field.parent, field.child, field.r#type);
+                }
+                Inst::Ldc(string) => {
+                    constant_pool.insert_string(string);
+                }
+                Inst::InvokeVirtual(method) => {
+                    constant_pool.insert_method(method.parent, method.child, method.r#type);
+                }
+            }
+        }
+        constant_pool
+    }
+}
+
+#[derive(Debug)]
+enum ConstantValue<'a> {
+    Utf8(&'a str),
+    String(u16),
+    Class(u16),
+    NameAndType(u16, u16),
+    Field(u16, u16),
+    Method(u16, u16),
+}
+
+#[derive(Debug, Eq, Hash, PartialEq)]
+enum ConstantKey<'a> {
+    Utf8(&'a str),
+    String(&'a str),
+    Class(&'a str),
+    NameAndType(&'a str, &'a str),
+    Field(&'a str, &'a str, &'a str),
+    Method(&'a str, &'a str, &'a str),
+}
+
+#[derive(Debug)]
+struct ConstantPool<'a> {
+    keys: HashMap<ConstantKey<'a>, u16>,
+    values: Vec<ConstantValue<'a>>,
+}
+
+impl<'a> ConstantPool<'a> {
+    fn new() -> Self {
+        Self {
+            keys: HashMap::new(),
+            values: Vec::new(),
+        }
+    }
+
+    fn insert_utf8(&mut self, utf8: &'a str) -> u16 {
+        let key = ConstantKey::Utf8(utf8);
+        let cached = self.keys.get(&key);
+        match cached {
+            Some(index) => *index,
+            None => {
+                let index = self.values.len().try_into().unwrap();
+                self.values.push(ConstantValue::Utf8(utf8));
+                assert!(self.keys.insert(key, index).is_none());
+                index
+            }
+        }
+    }
+
+    fn insert_string(&mut self, string: &'a str) -> u16 {
+        let key = ConstantKey::String(string);
+        let cached = self.keys.get(&key);
+        match cached {
+            Some(index) => *index,
+            None => {
+                let child_index = self.insert_utf8(string);
+                let parent_index = self.values.len().try_into().unwrap();
+                self.values.push(ConstantValue::String(child_index));
+                assert!(self.keys.insert(key, parent_index).is_none());
+                parent_index
+            }
+        }
+    }
+
+    fn insert_class(&mut self, class: &'a str) -> u16 {
+        let key = ConstantKey::Class(class);
+        let cached = self.keys.get(&key);
+        match cached {
+            Some(index) => *index,
+            None => {
+                let child_index = self.insert_utf8(class);
+                let parent_index = self.values.len().try_into().unwrap();
+                self.values.push(ConstantValue::Class(child_index));
+                assert!(self.keys.insert(key, parent_index).is_none());
+                parent_index
+            }
+        }
+    }
+
+    fn insert_name_and_type(&mut self, name: &'a str, r#type: &'a str) -> u16 {
+        let key = ConstantKey::NameAndType(name, r#type);
+        let cached = self.keys.get(&key);
+        match cached {
+            Some(index) => *index,
+            None => {
+                let name_index = self.insert_utf8(name);
+                let type_index = self.insert_utf8(r#type);
+                let parent_index = self.values.len().try_into().unwrap();
+                self.values
+                    .push(ConstantValue::NameAndType(name_index, type_index));
+                assert!(self.keys.insert(key, parent_index).is_none());
+                parent_index
+            }
+        }
+    }
+
+    fn insert_field(&mut self, parent: &'a str, child: &'a str, r#type: &'a str) -> u16 {
+        let key = ConstantKey::Field(parent, child, r#type);
+        let cached = self.keys.get(&key);
+        match cached {
+            Some(index) => *index,
+            None => {
+                let class_index = self.insert_class(parent);
+                let name_and_type_index = self.insert_name_and_type(child, r#type);
+                let parent_index = self.values.len().try_into().unwrap();
+                self.values
+                    .push(ConstantValue::Field(class_index, name_and_type_index));
+                assert!(self.keys.insert(key, parent_index).is_none());
+                parent_index
+            }
+        }
+    }
+
+    fn insert_method(&mut self, parent: &'a str, child: &'a str, r#type: &'a str) -> u16 {
+        let key = ConstantKey::Method(parent, child, r#type);
+        let cached = self.keys.get(&key);
+        match cached {
+            Some(index) => *index,
+            None => {
+                let class_index = self.insert_class(parent);
+                let name_and_type_index = self.insert_name_and_type(child, r#type);
+                let parent_index = self.values.len().try_into().unwrap();
+                self.values
+                    .push(ConstantValue::Method(class_index, name_and_type_index));
+                assert!(self.keys.insert(key, parent_index).is_none());
+                parent_index
+            }
+        }
+    }
 }
 
 fn main() {
@@ -259,6 +417,7 @@ fn main() {
         Code::Inst(Inst::InvokeVirtual(MemberMethod {
             parent: "java/io/PrintStream",
             child: "println",
+            r#type: "(Ljava/lang/String;)V",
             arg_types: vec!["Ljava/lang/String;"],
             return_type: "V",
         })),
@@ -277,5 +436,10 @@ fn main() {
     let stack_maps = method.simulate_stack();
     for stack_map in stack_maps {
         println!("{stack_map:?}");
+    }
+
+    let constant_pool = method.get_constant_pool();
+    for (i, constant_value) in constant_pool.values.iter().enumerate() {
+        println!("{i}: {constant_value:?}");
     }
 }
