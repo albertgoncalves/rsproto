@@ -2,14 +2,18 @@ use std::mem;
 use std::thread;
 use std::time;
 
+struct Closure<A, B> {
+    func: fn(A) -> B,
+    args: A,
+}
+
 union Internal<A, B> {
-    args: std::mem::ManuallyDrop<A>,
+    closure: std::mem::ManuallyDrop<Closure<A, B>>,
     result: std::mem::ManuallyDrop<B>,
 }
 
 struct Lazy<A, B> {
     eval: fn(&mut Lazy<A, B>) -> B,
-    func: fn(A) -> B,
     internal: Internal<A, B>,
 }
 
@@ -17,9 +21,8 @@ impl<A, B: Clone> Lazy<A, B> {
     fn new(func: fn(A) -> B, args: A) -> Self {
         Self {
             eval: Self::before,
-            func,
             internal: Internal {
-                args: mem::ManuallyDrop::new(args),
+                closure: mem::ManuallyDrop::new(Closure { func, args }),
             },
         }
     }
@@ -27,8 +30,8 @@ impl<A, B: Clone> Lazy<A, B> {
     fn before(&mut self) -> B {
         unsafe {
             // TODO: Are we leaking any memory?
-            let args = mem::ManuallyDrop::take(&mut self.internal.args);
-            let result = (self.func)(args);
+            let closure = mem::ManuallyDrop::take(&mut self.internal.closure);
+            let result = (closure.func)(closure.args);
             *self.internal.result = result.clone();
             self.eval = Self::after;
             result
