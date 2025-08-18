@@ -2,56 +2,59 @@ use std::mem;
 use std::thread;
 use std::time;
 
-union Internal<'a, T> {
-    closure: std::mem::ManuallyDrop<Box<dyn FnOnce() -> T + 'a>>,
-    value: mem::ManuallyDrop<T>,
+union Internal<A, B> {
+    args: std::mem::ManuallyDrop<A>,
+    result: std::mem::ManuallyDrop<B>,
 }
 
-struct Lazy<'a, T> {
-    eval: fn(&mut Lazy<'a, T>) -> T,
-    internal: Internal<'a, T>,
+struct Lazy<A, B> {
+    eval: fn(&mut Lazy<A, B>) -> B,
+    func: fn(A) -> B,
+    internal: Internal<A, B>,
 }
 
-impl<'a, T: Clone> Lazy<'a, T> {
-    fn new(closure: Box<dyn FnOnce() -> T + 'a>) -> Self {
+impl<A, B: Clone> Lazy<A, B> {
+    fn new(func: fn(A) -> B, args: A) -> Self {
         Self {
+            eval: Self::before,
+            func,
             internal: Internal {
-                closure: mem::ManuallyDrop::new(closure),
+                args: mem::ManuallyDrop::new(args),
             },
-            eval: Lazy::before,
         }
     }
 
-    fn before(&mut self) -> T {
+    fn before(&mut self) -> B {
         unsafe {
             // TODO: Are we leaking any memory?
-            let closure = mem::ManuallyDrop::take(&mut self.internal.closure);
-            let value = closure();
-            self.eval = Lazy::after;
-            *self.internal.value = value.clone();
-            value
+            let args = mem::ManuallyDrop::take(&mut self.internal.args);
+            let result = (self.func)(args);
+            *self.internal.result = result.clone();
+            self.eval = Self::after;
+            result
         }
     }
 
-    fn after(&mut self) -> T {
-        unsafe { (*self.internal.value).clone() }
+    fn after(&mut self) -> B {
+        unsafe { (*self.internal.result).clone() }
     }
 
-    fn call(&mut self) -> T {
+    fn call(&mut self) -> B {
         (self.eval)(self)
     }
 }
 
 fn main() {
-    println!("{}", mem::size_of::<Lazy<'_, i32>>());
+    println!("{}", mem::size_of::<Lazy<(&str, i64), i64>>());
 
-    let mut x: i32 = -111;
-    let mut lazy = Lazy::new(Box::new(|| {
-        println!("!");
-        thread::sleep(time::Duration::from_millis(500));
-        x += 555;
-        x
-    }));
+    let mut lazy = Lazy::new(
+        |(message, x)| {
+            println!("{message}");
+            thread::sleep(time::Duration::from_millis(500));
+            x
+        },
+        ("?!", -123),
+    );
 
     for _ in 0..5 {
         println!("{}", lazy.call());
