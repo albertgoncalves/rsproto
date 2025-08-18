@@ -71,8 +71,8 @@ fn main() {
     }
     let mut handles: Vec<JoinHandle<()>> = Vec::with_capacity(THREAD_CAP);
     for _ in 0..THREAD_CAP {
-        let buffer: ThreadMutPtr<[u8; BUFFER_CAP]> = ThreadMutPtr(&mut buffer);
-        let blocks: ThreadPtr<Vec<Block>> = ThreadPtr(&blocks);
+        let buffer: ThreadMutPtr<[u8; BUFFER_CAP]> = ThreadMutPtr(&raw mut buffer);
+        let blocks: ThreadPtr<Vec<Block>> = ThreadPtr(&raw const blocks);
         unsafe {
             handles.push(thread::spawn(move || {
                 let _ = (&buffer, &blocks);

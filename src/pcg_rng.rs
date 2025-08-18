@@ -45,7 +45,6 @@ impl Random<u32> for PcgRng {
             .rotate_right(state.wrapping_shr(59) as u32)
     }
 
-    #[must_use]
     fn uniform_bounded(&mut self, bound: u32) -> u32 {
         let threshold: u32 = bound.wrapping_neg() % bound;
         loop {

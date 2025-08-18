@@ -1,7 +1,7 @@
 use std::env;
 use std::fs::File;
+use std::io::Error;
 use std::io::Write;
-use std::io::{Error, ErrorKind};
 use std::mem::size_of;
 use std::path::Path;
 use std::slice::from_raw_parts;
@@ -32,7 +32,7 @@ fn main() -> Result<(), Error> {
     };
     let bytes: &[u8] = unsafe { get_u8_slice(&x) };
     let mut file: File = File::create(
-        Path::new(&env::var("WD").map_err(|e| Error::new(ErrorKind::Other, e))?)
+        Path::new(&env::var("WD").map_err(Error::other)?)
             .join("out")
             .join("struct.bin"),
     )?;
