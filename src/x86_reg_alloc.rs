@@ -15,6 +15,7 @@ enum Reg {
     R13,
     R14,
     R15,
+    Rsp,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -32,6 +33,7 @@ enum Src {
 #[derive(PartialEq, Debug)]
 enum Inst {
     Mov(Dst, Src),
+    Add(Dst, Src),
     StackPush(Src),
     StackPop(Dst),
 }
@@ -75,7 +77,7 @@ impl State {
                 Dst::Reg(_) => {}
             }
         }
-        assert!(found == 1);
+        assert_eq!(found, 1);
 
         self.insts.push(Inst::StackPush(Src::Dst(Dst::Reg(reg))));
     }
@@ -99,17 +101,34 @@ impl State {
     }
 
     fn alloc(&mut self, regs: &[Reg], src: Src) {
-        assert!(!regs.is_empty());
-        let dst = Dst::Reg(self.available(regs).map_or_else(
-            || {
-                let reg = self.oldest().unwrap();
-                self.spill(reg);
-                reg
+        match self.available(regs) {
+            Some(reg) => {
+                let dst = Dst::Reg(reg);
+                self.alive.push(dst);
+                self.insts.push(Inst::Mov(dst, src));
+            }
+            None => match self.oldest() {
+                Some(reg) => {
+                    self.spill(reg);
+                    let dst = Dst::Reg(reg);
+                    self.alive.push(dst);
+                    self.insts.push(Inst::Mov(dst, src));
+                }
+                None => {
+                    for dst in &mut self.alive {
+                        match dst {
+                            Dst::StackAddr(i) => {
+                                *i += 1;
+                            }
+                            Dst::Reg(_) => {}
+                        }
+                    }
+                    let dst = Dst::StackAddr(0);
+                    self.alive.push(dst);
+                    self.insts.push(Inst::StackPush(src));
+                }
             },
-            |reg| reg,
-        ));
-        self.alive.push(dst);
-        self.insts.push(Inst::Mov(dst, src));
+        }
     }
 
     fn swap(&mut self, i: usize) {
@@ -119,7 +138,17 @@ impl State {
     }
 
     fn drop(&mut self, n: usize) {
-        self.alive.truncate(self.alive.len() - n);
+        let i = self.alive.len() - n;
+        let mut k = 0;
+        for dst in &self.alive[i..] {
+            if let Dst::StackAddr(_) = dst {
+                k += 1;
+            }
+        }
+        if k != 0 {
+            self.insts.push(Inst::Add(Dst::Reg(Reg::Rsp), Src::Int(8 * k)));
+        }
+        self.alive.truncate(i);
     }
 
     fn call(&mut self, args: usize, rets: usize) {
@@ -139,7 +168,8 @@ impl State {
             self.alive[j] = dst;
         }
 
-        self.drop(args);
+        self.alive.truncate(self.alive.len() - args);
+
         for reg in &CALLER_SAVED {
             self.spill(*reg);
         }
@@ -213,6 +243,27 @@ mod tests {
     }
 
     #[test]
+    fn alloc_1() {
+        let mut state = State::default();
+
+        let regs = [];
+        state.alloc(&regs, Src::Int(0));
+        state.alloc(&regs, Src::Int(1));
+        state.swap(1);
+        state.alloc(&regs, Src::Int(2));
+
+        assert_eq!(state.alive, vec![Dst::StackAddr(1), Dst::StackAddr(2), Dst::StackAddr(0)]);
+        assert_eq!(
+            state.insts,
+            vec![
+                Inst::StackPush(Src::Int(0)),
+                Inst::StackPush(Src::Int(1)),
+                Inst::StackPush(Src::Int(2)),
+            ],
+        );
+    }
+
+    #[test]
     fn call_0() {
         let mut state = State::default();
         state.call(0, 0);
@@ -268,8 +319,51 @@ mod tests {
     #[test]
     fn call_3() {
         let mut state = State::default();
+
         state.call(0, 2);
+
         assert_eq!(state.alive, vec![Dst::Reg(Reg::Rax), Dst::Reg(Reg::Rdx)]);
         assert!(state.insts.is_empty());
+    }
+
+    #[test]
+    fn drop_0() {
+        let mut state = State::default();
+
+        state.alive.push(Dst::Reg(Reg::Rax));
+        state.alive.push(Dst::Reg(Reg::Rdx));
+
+        state.drop(2);
+
+        assert!(state.alive.is_empty());
+        assert!(state.insts.is_empty());
+    }
+
+    #[test]
+    fn drop_1() {
+        let mut state = State::default();
+
+        state.alive.push(Dst::Reg(Reg::Rax));
+        state.alive.push(Dst::Reg(Reg::Rdx));
+
+        state.drop(1);
+
+        assert_eq!(state.alive, vec![Dst::Reg(Reg::Rax)]);
+        assert!(state.insts.is_empty());
+    }
+
+    #[test]
+    fn drop_2() {
+        let mut state = State::default();
+
+        state.alive.push(Dst::Reg(Reg::Rax));
+        state.alive.push(Dst::Reg(Reg::Rdx));
+        state.alive.push(Dst::StackAddr(1));
+        state.alive.push(Dst::StackAddr(0));
+
+        state.drop(2);
+
+        assert_eq!(state.alive, vec![Dst::Reg(Reg::Rax), Dst::Reg(Reg::Rdx)]);
+        assert_eq!(state.insts, vec![Inst::Add(Dst::Reg(Reg::Rsp), Src::Int(16))]);
     }
 }
