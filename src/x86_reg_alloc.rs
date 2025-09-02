@@ -21,7 +21,7 @@ enum Reg {
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Dst {
     Reg(Reg),
-    StackAddr(usize),
+    StackAddr(u8),
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -31,17 +31,17 @@ enum Src {
 }
 
 #[derive(PartialEq, Debug)]
-enum Inst {
+enum X86Inst {
     Mov(Dst, Src),
     Add(Dst, Src),
-    StackPush(Src),
-    StackPop(Dst),
+    Push(Src),
+    Pop(Dst),
 }
 
 #[derive(Debug, Default)]
 struct State {
     alive: Vec<Dst>,
-    insts: Vec<Inst>,
+    insts: Vec<X86Inst>,
 }
 
 const CALLER_SAVED: [Reg; 9] = [
@@ -79,7 +79,7 @@ impl State {
         }
         assert_eq!(found, 1);
 
-        self.insts.push(Inst::StackPush(Src::Dst(Dst::Reg(reg))));
+        self.insts.push(X86Inst::Push(Src::Dst(Dst::Reg(reg))));
     }
 
     fn available(&self, regs: &[Reg]) -> Option<Reg> {
@@ -105,14 +105,14 @@ impl State {
             Some(reg) => {
                 let dst = Dst::Reg(reg);
                 self.alive.push(dst);
-                self.insts.push(Inst::Mov(dst, src));
+                self.insts.push(X86Inst::Mov(dst, src));
             }
             None => match self.oldest() {
                 Some(reg) => {
                     self.spill(reg);
                     let dst = Dst::Reg(reg);
                     self.alive.push(dst);
-                    self.insts.push(Inst::Mov(dst, src));
+                    self.insts.push(X86Inst::Mov(dst, src));
                 }
                 None => {
                     for dst in &mut self.alive {
@@ -125,7 +125,7 @@ impl State {
                     }
                     let dst = Dst::StackAddr(0);
                     self.alive.push(dst);
-                    self.insts.push(Inst::StackPush(src));
+                    self.insts.push(X86Inst::Push(src));
                 }
             },
         }
@@ -138,17 +138,28 @@ impl State {
     }
 
     fn drop(&mut self, n: usize) {
-        let i = self.alive.len() - n;
-        let mut k = 0;
-        for dst in &self.alive[i..] {
+        let j = self.alive.len() - n;
+
+        let mut k: u8 = 0;
+        for dst in &self.alive[j..] {
             if let Dst::StackAddr(_) = dst {
                 k += 1;
             }
         }
+
         if k != 0 {
-            self.insts.push(Inst::Add(Dst::Reg(Reg::Rsp), Src::Int(8 * k)));
+            for dst in &mut self.alive[..j] {
+                if let Dst::StackAddr(i) = dst {
+                    *i -= k;
+                }
+            }
+
+            let dst = Dst::Reg(Reg::Rsp);
+            let src = Src::Int((8 * k).into());
+            self.insts.push(X86Inst::Add(dst, src));
         }
-        self.alive.truncate(i);
+
+        self.alive.truncate(j);
     }
 
     fn call(&mut self, args: usize, rets: usize) {
@@ -164,7 +175,7 @@ impl State {
 
             self.spill(reg);
 
-            self.insts.push(Inst::Mov(dst, Src::Dst(self.alive[j])));
+            self.insts.push(X86Inst::Mov(dst, Src::Dst(self.alive[j])));
             self.alive[j] = dst;
         }
 
@@ -214,8 +225,8 @@ mod tests {
         assert_eq!(
             state.insts,
             vec![
-                Inst::StackPush(Src::Dst(Dst::Reg(Reg::Rdi))),
-                Inst::StackPush(Src::Dst(Dst::Reg(Reg::Rdx))),
+                X86Inst::Push(Src::Dst(Dst::Reg(Reg::Rdi))),
+                X86Inst::Push(Src::Dst(Dst::Reg(Reg::Rdx))),
             ],
         );
     }
@@ -233,11 +244,11 @@ mod tests {
         assert_eq!(
             state.insts,
             vec![
-                Inst::Mov(Dst::Reg(Reg::Rax), Src::Int(0)),
-                Inst::StackPush(Src::Dst(Dst::Reg(Reg::Rax))),
-                Inst::Mov(Dst::Reg(Reg::Rax), Src::Int(1)),
-                Inst::StackPush(Src::Dst(Dst::Reg(Reg::Rax))),
-                Inst::Mov(Dst::Reg(Reg::Rax), Src::Int(2)),
+                X86Inst::Mov(Dst::Reg(Reg::Rax), Src::Int(0)),
+                X86Inst::Push(Src::Dst(Dst::Reg(Reg::Rax))),
+                X86Inst::Mov(Dst::Reg(Reg::Rax), Src::Int(1)),
+                X86Inst::Push(Src::Dst(Dst::Reg(Reg::Rax))),
+                X86Inst::Mov(Dst::Reg(Reg::Rax), Src::Int(2)),
             ],
         );
     }
@@ -256,9 +267,9 @@ mod tests {
         assert_eq!(
             state.insts,
             vec![
-                Inst::StackPush(Src::Int(0)),
-                Inst::StackPush(Src::Int(1)),
-                Inst::StackPush(Src::Int(2)),
+                X86Inst::Push(Src::Int(0)),
+                X86Inst::Push(Src::Int(1)),
+                X86Inst::Push(Src::Int(2)),
             ],
         );
     }
@@ -284,9 +295,9 @@ mod tests {
         assert_eq!(
             state.insts,
             vec![
-                Inst::StackPush(Src::Dst(Dst::Reg(Reg::Rdi))),
-                Inst::Mov(Dst::Reg(Reg::Rdi), Src::Dst(Dst::Reg(Reg::Rdx))),
-                Inst::StackPush(Src::Dst(Dst::Reg(Reg::Rax))),
+                X86Inst::Push(Src::Dst(Dst::Reg(Reg::Rdi))),
+                X86Inst::Mov(Dst::Reg(Reg::Rdi), Src::Dst(Dst::Reg(Reg::Rdx))),
+                X86Inst::Push(Src::Dst(Dst::Reg(Reg::Rax))),
             ],
         );
     }
@@ -305,13 +316,13 @@ mod tests {
         assert_eq!(
             state.insts,
             vec![
-                Inst::Mov(Dst::Reg(Reg::Rax), Src::Int(0)),
-                Inst::Mov(Dst::Reg(Reg::Rdi), Src::Int(1)),
-                Inst::Mov(Dst::Reg(Reg::Rdx), Src::Dst(Dst::Reg(Reg::Rax))),
-                Inst::Mov(Dst::Reg(Reg::Rsi), Src::Dst(Dst::Reg(Reg::Rdi))),
-                Inst::StackPush(Src::Dst(Dst::Reg(Reg::Rdi))),
-                Inst::Mov(Dst::Reg(Reg::Rdi), Src::Dst(Dst::Reg(Reg::Rdx))),
-                Inst::StackPush(Src::Dst(Dst::Reg(Reg::Rax))),
+                X86Inst::Mov(Dst::Reg(Reg::Rax), Src::Int(0)),
+                X86Inst::Mov(Dst::Reg(Reg::Rdi), Src::Int(1)),
+                X86Inst::Mov(Dst::Reg(Reg::Rdx), Src::Dst(Dst::Reg(Reg::Rax))),
+                X86Inst::Mov(Dst::Reg(Reg::Rsi), Src::Dst(Dst::Reg(Reg::Rdi))),
+                X86Inst::Push(Src::Dst(Dst::Reg(Reg::Rdi))),
+                X86Inst::Mov(Dst::Reg(Reg::Rdi), Src::Dst(Dst::Reg(Reg::Rdx))),
+                X86Inst::Push(Src::Dst(Dst::Reg(Reg::Rax))),
             ],
         );
     }
@@ -364,6 +375,19 @@ mod tests {
         state.drop(2);
 
         assert_eq!(state.alive, vec![Dst::Reg(Reg::Rax), Dst::Reg(Reg::Rdx)]);
-        assert_eq!(state.insts, vec![Inst::Add(Dst::Reg(Reg::Rsp), Src::Int(16))]);
+        assert_eq!(state.insts, vec![X86Inst::Add(Dst::Reg(Reg::Rsp), Src::Int(16))]);
+    }
+
+    #[test]
+    fn drop_3() {
+        let mut state = State::default();
+
+        state.alive.push(Dst::StackAddr(1));
+        state.alive.push(Dst::StackAddr(0));
+
+        state.drop(1);
+
+        assert_eq!(state.alive, vec![Dst::StackAddr(0)]);
+        assert_eq!(state.insts, vec![X86Inst::Add(Dst::Reg(Reg::Rsp), Src::Int(8))]);
     }
 }
