@@ -239,10 +239,7 @@ mod tests {
                 'p',
                 vec![
                     func!('f', vec![atom!(Var, 'X')]),
-                    func!(
-                        'h',
-                        vec![atom!(Var, 'Y'), func!('f', vec![atom!(Const, 'a')])],
-                    ),
+                    func!('h', vec![atom!(Var, 'Y'), func!('f', vec![atom!(Const, 'a')])]),
                     atom!(Var, 'Y'),
                 ],
             ),
@@ -296,10 +293,6 @@ mod tests {
 
     #[test]
     fn test_unify_4() {
-        unify_and_assert(
-            "(f X (g Y))",
-            "(f (g Z) W)",
-            &[('X', "(g Z)"), ('W', "(g Y)")],
-        );
+        unify_and_assert("(f X (g Y))", "(f (g Z) W)", &[('X', "(g Z)"), ('W', "(g Y)")]);
     }
 }

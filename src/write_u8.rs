@@ -8,11 +8,7 @@ const BYTES: [u8; 13] = [
 ];
 
 fn main() {
-    let mut file: File = File::create(
-        Path::new(&env::var("WD").unwrap())
-            .join("out")
-            .join("u8.bin"),
-    )
-    .unwrap();
+    let mut file: File =
+        File::create(Path::new(&env::var("WD").unwrap()).join("out").join("u8.bin")).unwrap();
     file.write_all(&BYTES).unwrap();
 }

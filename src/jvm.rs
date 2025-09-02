@@ -354,8 +354,7 @@ impl<'a> ConstantPool<'a> {
                 let name_index = self.insert_utf8(name);
                 let type_index = self.insert_utf8(r#type);
                 let parent_index = self.values.len().try_into().unwrap();
-                self.values
-                    .push(ConstantValue::NameAndType(name_index, type_index));
+                self.values.push(ConstantValue::NameAndType(name_index, type_index));
                 assert!(self.keys.insert(key, parent_index).is_none());
                 parent_index
             }
@@ -371,8 +370,7 @@ impl<'a> ConstantPool<'a> {
                 let class_index = self.insert_class(parent);
                 let name_and_type_index = self.insert_name_and_type(child, r#type);
                 let parent_index = self.values.len().try_into().unwrap();
-                self.values
-                    .push(ConstantValue::Field(class_index, name_and_type_index));
+                self.values.push(ConstantValue::Field(class_index, name_and_type_index));
                 assert!(self.keys.insert(key, parent_index).is_none());
                 parent_index
             }
@@ -388,8 +386,7 @@ impl<'a> ConstantPool<'a> {
                 let class_index = self.insert_class(parent);
                 let name_and_type_index = self.insert_name_and_type(child, r#type);
                 let parent_index = self.values.len().try_into().unwrap();
-                self.values
-                    .push(ConstantValue::Method(class_index, name_and_type_index));
+                self.values.push(ConstantValue::Method(class_index, name_and_type_index));
                 assert!(self.keys.insert(key, parent_index).is_none());
                 parent_index
             }

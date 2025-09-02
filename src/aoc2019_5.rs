@@ -87,12 +87,9 @@ fn eval(program: &mut [i32], input: &mut Vec<i32>) -> Option<i32> {
 }
 
 fn main() {
-    let source: String = fs::read_to_string(
-        Path::new(&env::var("WD").unwrap())
-            .join("data")
-            .join("aoc2019_5.txt"),
-    )
-    .unwrap();
+    let source: String =
+        fs::read_to_string(Path::new(&env::var("WD").unwrap()).join("data").join("aoc2019_5.txt"))
+            .unwrap();
     let mut program: Vec<i32> = tokenize(source.trim_end());
     let _: Option<i32> = eval(&mut program.clone(), &mut vec![1]);
     let _: Option<i32> = eval(&mut program, &mut vec![5]);

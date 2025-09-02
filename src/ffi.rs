@@ -144,12 +144,7 @@ const GL_DEBUG_SEVERITY_NOTIFICATION: GLenum = 0x826B;
 extern "C" fn callback_glfw_error(error_code: c_int, description: *const c_char) {
     let mut message = error_code.to_string();
     if !description.is_null() {
-        write!(
-            message,
-            ": {}",
-            unsafe { CStr::from_ptr(description) }.to_str().unwrap(),
-        )
-        .unwrap();
+        write!(message, ": {}", unsafe { CStr::from_ptr(description) }.to_str().unwrap()).unwrap();
     }
     panic!("{}", message);
 }
@@ -184,10 +179,8 @@ extern "C" fn callback_gl_debug(
 ) {
     assert!(0 < length);
     unsafe {
-        let message: &str = from_utf8_unchecked(from_raw_parts(
-            message.cast::<u8>(),
-            length.try_into().unwrap(),
-        ));
+        let message: &str =
+            from_utf8_unchecked(from_raw_parts(message.cast::<u8>(), length.try_into().unwrap()));
         if severity == GL_DEBUG_SEVERITY_NOTIFICATION {
             #[allow(static_mut_refs)]
             GL_DEBUG_MESSAGES.push(message.to_owned());

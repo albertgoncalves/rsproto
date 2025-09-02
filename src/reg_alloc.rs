@@ -108,10 +108,7 @@ fn get_blocks<'a>(insts: &[Inst<'a>]) -> Vec<Block<'a>> {
     for (i, inst) in insts.iter().enumerate() {
         if let Inst::Label(label) = inst {
             if i != 0
-                && !matches!(
-                    insts[i - 1],
-                    Inst::Branch(..) | Inst::Jump(..) | Inst::Return(..),
-                )
+                && !matches!(insts[i - 1], Inst::Branch(..) | Inst::Jump(..) | Inst::Return(..))
             {
                 let j = blocks.len() - 1;
                 blocks[j].1.push(Inst::Jump((*label, vec![])));
@@ -131,10 +128,7 @@ fn get_blocks<'a>(insts: &[Inst<'a>]) -> Vec<Block<'a>> {
                 Inst::Label(..) | Inst::Jump(..) | Inst::Branch(..) | Inst::Return(..),
             ));
         }
-        assert!(matches!(
-            block.1[n],
-            Inst::Jump(..) | Inst::Branch(..) | Inst::Return(..),
-        ));
+        assert!(matches!(block.1[n], Inst::Jump(..) | Inst::Branch(..) | Inst::Return(..)));
     }
 
     blocks

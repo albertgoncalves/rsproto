@@ -52,14 +52,8 @@ fn strong_connect<'a, T: Ord>(
     }
 
     if indices[vertex] == low_links[vertex] {
-        components.push(
-            stack.split_off(
-                stack
-                    .iter()
-                    .rposition(|other| vertex == *other)
-                    .unwrap_or(0),
-            ),
-        );
+        components
+            .push(stack.split_off(stack.iter().rposition(|other| vertex == *other).unwrap_or(0)));
     }
 }
 

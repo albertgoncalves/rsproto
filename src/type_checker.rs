@@ -222,10 +222,7 @@ impl State {
             return Ok(left_index);
         }
 
-        match (
-            self.types[left_index].clone(),
-            self.types[right_index].clone(),
-        ) {
+        match (self.types[left_index].clone(), self.types[right_index].clone()) {
             (Type::Key(Key::GenChr(_, None)), _) | (_, Type::Key(Key::GenChr(_, None))) => {
                 Err(Error::Merge(left_index, right_index))
             }
@@ -307,8 +304,7 @@ impl State {
         }
 
         for new_key in found_keys.into_iter().filter(|new_key| old_key != new_key) {
-            self.key_to_key
-                .insert(Edge::new(old_key.clone(), new_key).unwrap());
+            self.key_to_key.insert(Edge::new(old_key.clone(), new_key).unwrap());
         }
 
         let mut found_types: Vec<usize> = found_types.into_iter().collect();
@@ -368,9 +364,7 @@ mod tests {
         let mut state = State::default();
         let key = Key::VarChr('x');
         let atom = Type::Atom('a');
-        assert!(state
-            .push_and_insert(key.clone(), atom.clone(), false)
-            .is_ok());
+        assert!(state.push_and_insert(key.clone(), atom.clone(), false).is_ok());
         assert!(state.push_and_insert(key, atom, false).is_ok());
     }
 
@@ -378,9 +372,7 @@ mod tests {
     fn test_a_ne_b() {
         let mut state = State::default();
         let key = Key::VarChr('x');
-        assert!(state
-            .push_and_insert(key.clone(), Type::Atom('a'), false)
-            .is_ok());
+        assert!(state.push_and_insert(key.clone(), Type::Atom('a'), false).is_ok());
         assert!(state.push_and_insert(key, Type::Atom('b'), false).is_err());
     }
 }

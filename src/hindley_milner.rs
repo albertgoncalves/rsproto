@@ -149,13 +149,9 @@ impl<'a> State<'a> {
                 self.links.insert(k, new_type.clone());
                 new_type
             }
-            Type::Op(op, old_types) => Type::Op(
-                op,
-                old_types
-                    .into_iter()
-                    .map(|old_type| self.prune(old_type))
-                    .collect(),
-            ),
+            Type::Op(op, old_types) => {
+                Type::Op(op, old_types.into_iter().map(|old_type| self.prune(old_type)).collect())
+            }
             Type::Dict(old_dict, Some(k)) => {
                 let mut new_dict = match self.prune(Type::Var(k)) {
                     Type::Dict(new_dict, _) => new_dict,
@@ -231,13 +227,9 @@ impl<'a> Context<'a> {
                 self.generics.insert(old_k, new_k);
                 new_type
             }
-            Type::Op(op, types) => Type::Op(
-                op,
-                types
-                    .into_iter()
-                    .map(|old_type| self.fresh(old_type))
-                    .collect(),
-            ),
+            Type::Op(op, types) => {
+                Type::Op(op, types.into_iter().map(|old_type| self.fresh(old_type)).collect())
+            }
             Type::Dict(dict, k) => Type::Dict(
                 dict.into_iter()
                     .map(|(ident, old_type)| (ident, self.fresh(old_type)))
@@ -444,10 +436,7 @@ fn main() {
     let b = context.state.next_var().1;
     context.env.push((
         "pair",
-        Type::Op(
-            "fn",
-            vec![a.clone(), b.clone(), Type::Op("tuple", vec![a, b])],
-        ),
+        Type::Op("fn", vec![a.clone(), b.clone(), Type::Op("tuple", vec![a, b])]),
     ));
 
     let term = Term::Lambda(
@@ -505,10 +494,8 @@ mod tests {
             )),
         );
 
-        let expected = Ok(Type::Op(
-            "tuple",
-            vec![Type::Op("int", vec![]), Type::Op("bool", vec![])],
-        ));
+        let expected =
+            Ok(Type::Op("tuple", vec![Type::Op("int", vec![]), Type::Op("bool", vec![])]));
 
         assert!(context.infer(&term) == expected);
     }
@@ -767,10 +754,7 @@ mod tests {
         ));
 
         let term = Term::Apply(vec![
-            Term::Lambda(
-                vec!["x"],
-                Box::new(Term::Access(Box::new(Term::Ident("x")), "a")),
-            ),
+            Term::Lambda(vec!["x"], Box::new(Term::Access(Box::new(Term::Ident("x")), "a"))),
             Term::Ident("x"),
         ]);
 
@@ -888,10 +872,7 @@ mod tests {
                     vec!["x"],
                     Box::new(Term::Let(
                         "y",
-                        Box::new((
-                            Term::Access(Box::new(Term::Ident("x")), "a"),
-                            Term::Ident("x"),
-                        )),
+                        Box::new((Term::Access(Box::new(Term::Ident("x")), "a"), Term::Ident("x"))),
                     )),
                 ),
                 Term::Apply(vec![Term::Ident("f"), Term::Ident("x")]),
@@ -929,10 +910,7 @@ mod tests {
             vec!["x"],
             Box::new(Term::Let(
                 "y",
-                Box::new((
-                    Term::Access(Box::new(Term::Ident("x")), "a"),
-                    Term::Ident("x"),
-                )),
+                Box::new((Term::Access(Box::new(Term::Ident("x")), "a"), Term::Ident("x"))),
             )),
         );
 
@@ -1065,10 +1043,7 @@ mod tests {
             vec!["x"],
             Box::new(Term::Let(
                 "y",
-                Box::new((
-                    Term::Ident("x"),
-                    Term::Apply(vec![Term::Ident("y"), Term::Ident("y")]),
-                )),
+                Box::new((Term::Ident("x"), Term::Apply(vec![Term::Ident("y"), Term::Ident("y")]))),
             )),
         );
 
@@ -1078,10 +1053,9 @@ mod tests {
     #[test]
     fn infer_err_mismatch_0() {
         let mut context = Context::default();
-        context.env.push((
-            "f",
-            Type::Op("fn", vec![Type::Op("int", vec![]), Type::Op("int", vec![])]),
-        ));
+        context
+            .env
+            .push(("f", Type::Op("fn", vec![Type::Op("int", vec![]), Type::Op("int", vec![])])));
 
         let term = Term::Apply(vec![Term::Ident("f"), Term::Bool(true)]);
 
@@ -1094,11 +1068,7 @@ mod tests {
         context.env.push(("a", Type::Op("bool", vec![])));
         context.env.push(("b", Type::Op("int", vec![])));
 
-        let term = Term::IfElse(Box::new((
-            Term::Bool(false),
-            Term::Ident("a"),
-            Term::Ident("b"),
-        )));
+        let term = Term::IfElse(Box::new((Term::Bool(false), Term::Ident("a"), Term::Ident("b"))));
 
         assert!(context.infer(&term) == Err(Error::Mismatch));
     }
@@ -1152,10 +1122,9 @@ mod tests {
     #[test]
     fn infer_err_key() {
         let mut context = Context::default();
-        context.env.push((
-            "x",
-            Type::Dict([("y", Type::Op("int", vec![]))].into(), None),
-        ));
+        context
+            .env
+            .push(("x", Type::Dict([("y", Type::Op("int", vec![]))].into(), None)));
 
         let term = Term::Access(Box::new(Term::Ident("x")), "z");
 

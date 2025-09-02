@@ -38,9 +38,7 @@ impl Random<u32> for PcgRng {
     #[allow(clippy::cast_possible_truncation, clippy::unreadable_literal)]
     fn uniform(&mut self) -> u32 {
         let state = self.state;
-        self.state = state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(self.increment | 1);
+        self.state = state.wrapping_mul(6364136223846793005).wrapping_add(self.increment | 1);
         ((state.wrapping_shr(18) ^ state).wrapping_shr(27) as u32)
             .rotate_right(state.wrapping_shr(59) as u32)
     }
@@ -59,13 +57,7 @@ impl Random<u32> for PcgRng {
 #[allow(clippy::cast_possible_truncation)]
 fn main() {
     let mut rng = PcgRng::new();
-    rng.seed(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as u64,
-        1,
-    );
+    rng.seed(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u64, 1);
 
     println!("{}", rng.uniform());
     println!("{}", rng.uniform());

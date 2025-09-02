@@ -32,9 +32,7 @@ fn main() -> Result<(), Error> {
     };
     let bytes: &[u8] = unsafe { get_u8_slice(&x) };
     let mut file: File = File::create(
-        Path::new(&env::var("WD").map_err(Error::other)?)
-            .join("out")
-            .join("struct.bin"),
+        Path::new(&env::var("WD").map_err(Error::other)?).join("out").join("struct.bin"),
     )?;
     file.write_all(bytes)?;
     file.write_all(&[0, 0, 0, 0])?;

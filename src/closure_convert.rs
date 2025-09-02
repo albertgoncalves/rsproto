@@ -271,8 +271,7 @@ impl<'a> State<'a> {
 
                 let k = self.functions.len();
                 let swapped = Expr::CompilerVar(k);
-                self.functions
-                    .push_back(Stmt::CompilerLet(k, mem::replace(expr, swapped)));
+                self.functions.push_back(Stmt::CompilerLet(k, mem::replace(expr, swapped)));
             }
             Expr::CompilerVar(..) => unreachable!(),
         }

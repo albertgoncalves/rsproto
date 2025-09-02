@@ -50,12 +50,9 @@ fn eval(program: &mut [u32]) {
 }
 
 fn main() {
-    let source: String = fs::read_to_string(
-        Path::new(&env::var("WD").unwrap())
-            .join("data")
-            .join("aoc2019_2.txt"),
-    )
-    .unwrap();
+    let source: String =
+        fs::read_to_string(Path::new(&env::var("WD").unwrap()).join("data").join("aoc2019_2.txt"))
+            .unwrap();
     let program: Vec<u32> = tokenize(source.trim_end());
     {
         let mut program: Vec<u32> = program.clone();
