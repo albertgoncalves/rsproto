@@ -15,10 +15,10 @@ enum Stmt<'a> {
 enum Expr<'a> {
     Int(i64),
     Var(&'a str),
-    Call(Vec<Expr<'a>>),
+    Call(Vec<Self>),
     Func(Vec<&'a str>, VecDeque<Stmt<'a>>),
-    Array(Vec<Expr<'a>>),
-    Access(Box<Expr<'a>>, usize),
+    Array(Vec<Self>),
+    Access(Box<Self>, usize),
     CompilerVar(usize),
 }
 

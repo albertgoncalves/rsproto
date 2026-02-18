@@ -4,7 +4,7 @@ use std::ptr;
 #[derive(Clone)]
 struct Item<T> {
     value: T,
-    next: *mut Item<T>,
+    next: *mut Self,
 }
 
 struct Array<T, const N: usize> {

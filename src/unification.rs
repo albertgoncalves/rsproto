@@ -13,7 +13,7 @@ enum Type {
 #[derive(Debug, PartialEq)]
 enum Expr {
     Atom(Type),
-    Func(char, Vec<Expr>),
+    Func(char, Vec<Self>),
 }
 
 type RowIndex = usize;

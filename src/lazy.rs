@@ -13,7 +13,7 @@ union Internal<A, B> {
 }
 
 struct Lazy<A, B> {
-    eval: fn(&mut Lazy<A, B>) -> B,
+    eval: fn(&mut Self) -> B,
     internal: Internal<A, B>,
 }
 

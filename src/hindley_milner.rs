@@ -8,20 +8,20 @@ enum Term<'a> {
     Int(i64),
     Bool(bool),
     Ident(&'a str),
-    Access(Box<Term<'a>>, &'a str),
-    Lambda(Vec<&'a str>, Box<Term<'a>>),
-    Apply(Vec<Term<'a>>),
-    Let(&'a str, Box<(Term<'a>, Term<'a>)>),
-    LetRecs(Vec<(&'a str, Term<'a>)>, Box<Term<'a>>),
-    IfElse(Box<(Term<'a>, Term<'a>, Term<'a>)>),
-    Seq(Box<(Term<'a>, Term<'a>)>),
+    Access(Box<Self>, &'a str),
+    Lambda(Vec<&'a str>, Box<Self>),
+    Apply(Vec<Self>),
+    Let(&'a str, Box<(Self, Self)>),
+    LetRecs(Vec<(&'a str, Self)>, Box<Self>),
+    IfElse(Box<(Self, Self, Self)>),
+    Seq(Box<(Self, Self)>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum Type<'a> {
     Var(u32),
-    Op(&'a str, Vec<Type<'a>>),
-    Dict(HashMap<&'a str, Type<'a>>, Option<u32>),
+    Op(&'a str, Vec<Self>),
+    Dict(HashMap<&'a str, Self>, Option<u32>),
 }
 
 #[derive(Debug, PartialEq)]
