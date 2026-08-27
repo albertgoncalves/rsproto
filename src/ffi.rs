@@ -197,7 +197,7 @@ fn main() {
 
         glfwSetErrorCallback(callback_glfw_error);
 
-        assert!(glfwInit() == 1);
+        assert_eq!(glfwInit(), 1);
         defer!(glfwTerminate());
 
         glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1);

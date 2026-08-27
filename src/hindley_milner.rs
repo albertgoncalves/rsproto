@@ -101,7 +101,7 @@ impl fmt::Display for Type<'_> {
                 write!(f, ") -> {}", types[n - 1])
             }
             Self::Op("tuple", types) => {
-                assert!(types.len() == 2);
+                assert_eq!(types.len(), 2);
                 write!(f, "({}, {})", types[0], types[1])
             }
             Self::Op(..) => todo!(),
@@ -363,7 +363,7 @@ impl<'a> Context<'a> {
                 let func_type = Type::Op("fn", func_types);
 
                 for (arg, arg_k) in arg_vars.into_iter().rev() {
-                    assert!(*arg == self.env.pop().unwrap().0);
+                    assert_eq!(*arg, self.env.pop().unwrap().0);
                     assert!(self.non_generics.remove(&arg_k));
                 }
 
@@ -376,7 +376,7 @@ impl<'a> Context<'a> {
                 self.env.push((ident, value_type));
                 let body_type = self.infer(body)?;
 
-                assert!(*ident == self.env.pop().unwrap().0);
+                assert_eq!(*ident, self.env.pop().unwrap().0);
 
                 Ok(self.state.prune(body_type))
             }
@@ -402,7 +402,7 @@ impl<'a> Context<'a> {
                 let body_type = self.infer(body)?;
 
                 for (ident, _) in bindings.iter().rev() {
-                    assert!(*ident == self.env.pop().unwrap().0);
+                    assert_eq!(*ident, self.env.pop().unwrap().0);
                 }
 
                 Ok(self.state.prune(body_type))
@@ -497,7 +497,7 @@ mod tests {
         let expected =
             Ok(Type::Op("tuple", vec![Type::Op("int", vec![]), Type::Op("bool", vec![])]));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -512,7 +512,7 @@ mod tests {
             )),
         );
 
-        assert!(context.infer(&term) == Ok(Type::Op("int", vec![])));
+        assert_eq!(context.infer(&term), Ok(Type::Op("int", vec![])));
     }
 
     #[test]
@@ -547,7 +547,7 @@ mod tests {
             ],
         ));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -594,7 +594,7 @@ mod tests {
 
         let expected = Ok(Type::Op("tuple", vec![Type::Var(8), Type::Var(9)]));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -653,7 +653,7 @@ mod tests {
             ],
         ));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -697,7 +697,7 @@ mod tests {
             ],
         ));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -735,7 +735,7 @@ mod tests {
             ],
         ));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -758,7 +758,7 @@ mod tests {
             Term::Ident("x"),
         ]);
 
-        assert!(context.infer(&term) == Ok(Type::Op("int", vec![])));
+        assert_eq!(context.infer(&term), Ok(Type::Op("int", vec![])));
     }
 
     #[test]
@@ -780,7 +780,7 @@ mod tests {
             )),
         );
 
-        assert!(context.infer(&term) == Ok(Type::Var(4)));
+        assert_eq!(context.infer(&term), Ok(Type::Var(4)));
     }
 
     #[test]
@@ -821,7 +821,7 @@ mod tests {
             ],
         ));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -847,7 +847,7 @@ mod tests {
             ],
         ));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -888,7 +888,7 @@ mod tests {
             Some(2),
         ));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -922,7 +922,7 @@ mod tests {
             ],
         ));
 
-        assert!(context.infer(&term) == expected);
+        assert_eq!(context.infer(&term), expected);
     }
 
     #[test]
@@ -938,7 +938,7 @@ mod tests {
             Term::Lambda(vec![], Box::new(Term::Ident("b"))),
         )));
 
-        assert!(context.infer(&term) == Ok(Type::Op("fn", vec![Type::Op("int", vec![])])));
+        assert_eq!(context.infer(&term), Ok(Type::Op("fn", vec![Type::Op("int", vec![])])));
     }
 
     #[test]
@@ -947,7 +947,7 @@ mod tests {
 
         let term = Term::Seq(Box::new((Term::Void, Term::Int(-1))));
 
-        assert!(context.infer(&term) == Ok(Type::Op("int", vec![])));
+        assert_eq!(context.infer(&term), Ok(Type::Op("int", vec![])));
     }
 
     #[test]
@@ -974,14 +974,14 @@ mod tests {
         x
         */
 
-        assert!(context.infer(&term) == Ok(Type::Op("int", vec![])));
+        assert_eq!(context.infer(&term), Ok(Type::Op("int", vec![])));
     }
 
     #[test]
     fn infer_err_undefined_0() {
         let mut context = Context::default();
 
-        assert!(context.infer(&Term::Ident("x")) == Err(Error::Undefined));
+        assert_eq!(context.infer(&Term::Ident("x")), Err(Error::Undefined));
     }
 
     #[test]
@@ -990,7 +990,7 @@ mod tests {
 
         let term = Term::Seq(Box::new((Term::Ident("x"), Term::Int(-1))));
 
-        assert!(context.infer(&term) == Err(Error::Undefined));
+        assert_eq!(context.infer(&term), Err(Error::Undefined));
     }
 
     #[test]
@@ -1002,7 +1002,7 @@ mod tests {
             Term::Ident("x"),
         )));
 
-        assert!(context.infer(&term) == Err(Error::Undefined));
+        assert_eq!(context.infer(&term), Err(Error::Undefined));
     }
 
     #[test]
@@ -1014,7 +1014,7 @@ mod tests {
             Box::new(Term::Apply(vec![Term::Ident("f"), Term::Ident("f")])),
         );
 
-        assert!(context.infer(&term) == Err(Error::Infinite));
+        assert_eq!(context.infer(&term), Err(Error::Infinite));
     }
 
     #[test]
@@ -1032,7 +1032,7 @@ mod tests {
             ])),
         );
 
-        assert!(context.infer(&term) == Err(Error::Infinite));
+        assert_eq!(context.infer(&term), Err(Error::Infinite));
     }
 
     #[test]
@@ -1047,7 +1047,7 @@ mod tests {
             )),
         );
 
-        assert!(context.infer(&term) == Err(Error::Infinite));
+        assert_eq!(context.infer(&term), Err(Error::Infinite));
     }
 
     #[test]
@@ -1059,7 +1059,7 @@ mod tests {
 
         let term = Term::Apply(vec![Term::Ident("f"), Term::Bool(true)]);
 
-        assert!(context.infer(&term) == Err(Error::Mismatch));
+        assert_eq!(context.infer(&term), Err(Error::Mismatch));
     }
 
     #[test]
@@ -1070,7 +1070,7 @@ mod tests {
 
         let term = Term::IfElse(Box::new((Term::Bool(false), Term::Ident("a"), Term::Ident("b"))));
 
-        assert!(context.infer(&term) == Err(Error::Mismatch));
+        assert_eq!(context.infer(&term), Err(Error::Mismatch));
     }
 
     #[test]
@@ -1085,7 +1085,7 @@ mod tests {
             )),
         );
 
-        assert!(context.infer(&term) == Err(Error::Arity));
+        assert_eq!(context.infer(&term), Err(Error::Arity));
     }
 
     #[test]
@@ -1100,7 +1100,7 @@ mod tests {
             )),
         );
 
-        assert!(context.infer(&term) == Err(Error::Arity));
+        assert_eq!(context.infer(&term), Err(Error::Arity));
     }
 
     #[test]
@@ -1116,7 +1116,7 @@ mod tests {
             Term::Lambda(vec![], Box::new(Term::Ident("b"))),
         )));
 
-        assert!(context.infer(&term) == Err(Error::Arity));
+        assert_eq!(context.infer(&term), Err(Error::Arity));
     }
 
     #[test]
@@ -1128,6 +1128,6 @@ mod tests {
 
         let term = Term::Access(Box::new(Term::Ident("x")), "z");
 
-        assert!(context.infer(&term) == Err(Error::Key));
+        assert_eq!(context.infer(&term), Err(Error::Key));
     }
 }

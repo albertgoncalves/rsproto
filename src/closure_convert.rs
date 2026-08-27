@@ -53,7 +53,7 @@ fn display_expr(expr: &Expr<'_>, f: &mut fmt::Formatter<'_>, pad: usize) -> fmt:
         Expr::Var(var) => write!(f, "{var}"),
         Expr::Call(exprs) => {
             if matches!(exprs[0], Expr::Var("+")) {
-                assert!(exprs.len() == 3);
+                assert_eq!(exprs.len(), 3);
                 display_expr(&exprs[1], f, pad)?;
                 write!(f, " + ")?;
                 display_expr(&exprs[2], f, pad)
@@ -129,8 +129,8 @@ struct State<'a> {
 impl<'a> State<'a> {
     fn stack_len(&self) -> usize {
         let n = self.locals.len();
-        assert!(n == self.args.len());
-        assert!(n == self.frees.len());
+        assert_eq!(n, self.args.len());
+        assert_eq!(n, self.frees.len());
         n
     }
 
@@ -368,7 +368,7 @@ fn call_convert_expr(expr: &mut Expr<'_>, globals: &HashSet<&'_ str>) {
                 }
                 Expr::Var(var) if globals.contains(var) => (),
                 Expr::Array(exprs) => {
-                    assert!(exprs.len() == 2);
+                    assert_eq!(exprs.len(), 2);
                     *expr = Expr::Call(mem::take(exprs));
                 }
                 _ => {

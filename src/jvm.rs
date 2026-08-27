@@ -169,13 +169,13 @@ impl<'a> Method<'a> {
             }
 
             while let Some(local) = local_starts.pop_if(|local| local.pc == pc) {
-                assert!(locals.len() == local.slot);
+                assert_eq!(locals.len(), local.slot);
                 locals.push((local.name, local.signature));
                 local_ends.push((local.pc + local.length, local.name));
             }
 
             while let Some(local) = local_ends.pop_if(|local| local.0 == pc) {
-                assert!(locals.pop().unwrap().0 == local.1);
+                assert_eq!(locals.pop().unwrap().0, local.1);
             }
 
             snapshots[i] = Some((pc, stack.clone(), locals.clone()));
