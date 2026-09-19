@@ -264,8 +264,7 @@ impl State {
                 Ok(self.push_index(Type::Func(inputs, output)))
             }
             (Type::Key(left_key), Type::Key(right_key)) => {
-                self.key_to_key
-                    .insert(Edge::new(left_key, right_key).unwrap());
+                self.key_to_key.insert(Edge::new(left_key, right_key).unwrap());
                 Ok(left_index)
             }
             (Type::Key(key), _) => {
